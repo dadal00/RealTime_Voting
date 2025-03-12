@@ -3,6 +3,7 @@ use axum::{
     http::Method,
     Json, Router,
 };
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -19,6 +20,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    
     tracing_subscriber::fmt::init();
     
     let state = Arc::new(AppState::default());
@@ -39,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "0.0.0.0:3000".to_string())
         .parse()?;
     
-    tracing::info!("Rust counter listening on {}", addr);
+    tracing::info!("Status - (Rust)Program running on {}", addr);
     
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
@@ -51,30 +53,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn increment(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::extract::Path(color): axum::extract::Path<String>,
-) {
+    ) {
+
     let result = match color.as_str() {
         "red" => state.red.fetch_add(1, Ordering::Relaxed),
         "green" => state.green.fetch_add(1, Ordering::Relaxed),
         "blue" => state.blue.fetch_add(1, Ordering::Relaxed),
         "yellow" => state.yellow.fetch_add(1, Ordering::Relaxed),
         unknown => {
-            tracing::warn!("Unknown color requested: {}", unknown);
+            tracing::warn!("Error - (Rust)increment - Unknown Color Requested: {}", unknown);
             return;
         }
     };
     
-    tracing::debug!("Incremented {} counter to {}", color, result + 1);
+    tracing::debug!("(Debug)Status - (Rust)increment - Incremented {} Counter to {}", color, result + 1);
 }
 
 async fn get_counters(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-) -> Json<HashMap<String, u64>> {
+    ) -> Json<HashMap<String, u64>> {
+        
     let mut counters = HashMap::new();
     counters.insert("red".to_string(), state.red.load(Ordering::Relaxed));
     counters.insert("green".to_string(), state.green.load(Ordering::Relaxed));
     counters.insert("blue".to_string(), state.blue.load(Ordering::Relaxed));
     counters.insert("yellow".to_string(), state.yellow.load(Ordering::Relaxed));
     
-    tracing::debug!("Returning counters: {:?}", counters);
+    tracing::debug!("(Debug)Status - (Rust)get_counters - Returning Counters: {:?}", counters);
     Json(counters)
 }
