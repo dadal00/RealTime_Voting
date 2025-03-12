@@ -1,4 +1,6 @@
 <script>
+  const backend_url = "http://localhost:11434"
+
   let input = ""
   let messages = []
   let is_loading = false
@@ -13,10 +15,15 @@
     messages = [...messages, { text: user_message }]
     
     try {
-      const response = await fetch("http://localhost:8080/api/chat", {
+      const response = await fetch(backend_url + "/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: user_message })
+        body: JSON.stringify(
+          { 
+            'model':  "deepseek-r1:1.5b",
+            'prompt': user_message,
+            'stream': false,
+          })
       })
 
       const data = await response.json()
