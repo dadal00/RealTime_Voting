@@ -1,16 +1,65 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-const port = ":8080"
+const (
+	port                  = ":8080"
+	update_channel_buffer = 10
+)
+
+type Broker struct {
+	clients map[chan []byte]bool
+	mutex   sync.Mutex
+}
+
+func create_broker() *Broker {
+	return &Broker{
+		clients: make(map[chan []byte]bool),
+	}
+}
+
+func (broker *Broker) add_client() chan []byte {
+	broker.mutex.Lock()
+	defer broker.mutex.Unlock()
+
+	channel := make(chan []byte, update_channel_buffer)
+	broker.clients[channel] = true
+	return channel
+}
+
+func (broker *Broker) remove_client(channel chan []byte) {
+	broker.mutex.Lock()
+	defer broker.mutex.Unlock()
+
+	delete(broker.clients, channel)
+	close(channel)
+}
+
+func (broker *Broker) broadcast(data []byte) {
+	broker.mutex.Lock()
+	defer broker.mutex.Unlock()
+
+	for client := range broker.clients {
+		select {
+		case client <- data:
+		default:
+			delete(broker.clients, client)
+			close(client)
+		}
+	}
+}
+
+var broker = create_broker()
 
 func main() {
 
@@ -42,12 +91,30 @@ func increment_handler(c *gin.Context) {
 	}
 	defer response.Body.Close()
 
+	go func() {
+		client := &http.Client{Timeout: 2 * time.Second}
+		response, err := client.Get("http://localhost:3000/counters")
+		if err != nil {
+			log.Println("Error - (Go)increment_handler - Failed to fetch updated counters:", err)
+			return
+		}
+		defer response.Body.Close()
+
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			log.Println("Error - (Go)increment_handler - Failed to read counters:", err)
+			return
+		}
+
+		broker.broadcast(body)
+	}()
+
 	c.Status(http.StatusOK)
 }
 
 func counter_handler(c *gin.Context) {
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 2 * time.Second}
 
 	response, err := client.Get("http://localhost:3000/counters")
 	if err != nil {
@@ -73,24 +140,50 @@ func update_handler(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 
-	client := &http.Client{}
-
 	w := c.Writer
-	w.Flush()
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	client_channel := broker.add_client()
+	defer broker.remove_client(client_channel)
+
+	initialCounters, err := fetch_initial_counters()
+	if err == nil {
+		fmt.Fprintf(w, "data: %s\n\n", initialCounters)
+		flusher.Flush()
+	}
+
+	cancellable_context, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	go func() {
+		<-cancellable_context.Done()
+		broker.remove_client(client_channel)
+	}()
 
 	for {
-
-		response, err := client.Get("http://localhost:3000/counters")
-		if err != nil {
-			log.Println("Error - (Go)update_handler - Failed to Fetch Update:", err)
-			continue
+		select {
+		case data := <-client_channel:
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-cancellable_context.Done():
+			return
 		}
-
-		body, _ := io.ReadAll(response.Body)
-		response.Body.Close()
-
-		fmt.Fprintf(w, "data: %s\n\n", string(body))
-		w.Flush()
-		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+func fetch_initial_counters() ([]byte, error) {
+
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	response, err := client.Get("http://localhost:3000/counters")
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	return io.ReadAll(response.Body)
 }
