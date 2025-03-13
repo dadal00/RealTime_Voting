@@ -21,7 +21,7 @@ impl AppState {
             "red" => Some(self.counters[0].fetch_add(1, Ordering::Relaxed)),
             "green" => Some(self.counters[1].fetch_add(1, Ordering::Relaxed)),
             "blue" => Some(self.counters[2].fetch_add(1, Ordering::Relaxed)),
-            "yellow" => Some(self.counters[3].fetch_add(1, Ordering::Relaxed)),
+            "purple" => Some(self.counters[3].fetch_add(1, Ordering::Relaxed)),
             _ => None,
         }
     }
@@ -31,7 +31,7 @@ impl AppState {
             red: self.counters[0].load(Ordering::Relaxed),
             green: self.counters[1].load(Ordering::Relaxed),
             blue: self.counters[2].load(Ordering::Relaxed),
-            yellow: self.counters[3].load(Ordering::Relaxed),
+            purple: self.counters[3].load(Ordering::Relaxed),
         }
     }
 }
@@ -41,7 +41,7 @@ struct Counters {
     red: u64,
     green: u64,
     blue: u64,
-    yellow: u64,
+    purple: u64,
 }
 
 #[tokio::main]

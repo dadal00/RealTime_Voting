@@ -159,11 +159,6 @@ func update_handler(c *gin.Context) {
 	cancellable_context, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	go func() {
-		<-cancellable_context.Done()
-		broker.remove_client(client_channel)
-	}()
-
 	for {
 		select {
 		case data := <-client_channel:
