@@ -1,7 +1,6 @@
 <script>
   import "./app.css";
   import { onMount } from "svelte"
-  import { Button, GradientButton } from 'flowbite-svelte';
   
   let counters = { red: 0, green: 0, blue: 0, purple: 0 }
   const color_order = ["red", "green", "blue", "purple"]
@@ -24,12 +23,9 @@
 <main>
   <div class="buttons">
     {#each color_order.map(color => [color, counters[color]]) as [color, count]}
-      <GradientButton shadow color={color} on:click={() => increment(color)}>
+      <button on:click={() => increment(color)}>
         {color} ({count})
-      </GradientButton>
-      <!-- <button on:click={() => increment(color)}>
-        {color} ({count})
-      </button> -->
+      </button>
     {/each}
   </div>
 </main>
