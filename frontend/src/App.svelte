@@ -13,13 +13,17 @@
   let data = []
   let svg
   let eventSource
-  let tickerText = ''
   let latestTimestamp
 
   const color_order = ["red", "green", "blue", "purple"]
   const chartWidth = width - margin.left - margin.right
   const chartHeight = height - margin.top - margin.bottom
-  const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
+  const gradients = {
+    red: { start: '#ff6b6b', end: '#ff4757' },
+    green: { start: '#4CAF50', end: '#388E3C' },
+    blue: { start: '#2196F3', end: '#1976D2' },
+    purple: { start: '#9C27B0', end: '#7B1FA2' }
+  };
   
   async function increment(color) {
     try {
@@ -33,33 +37,32 @@
 
     svg = d3.select("#chart")
       .append("svg")
+      .attr("viewBox", [0, 0, width, height])
       .attr("width", width)
       .attr("height", height)
+      .attr("style", "max-width: 100%; height: auto;")
 
-    const g = svg.append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`)
+    color_order.forEach(color => {
+      const gradient = (svg.append("defs")).append("linearGradient")
+        .attr("id", `gradient-${color}`)
+        .attr("x1", "0%")
+        .attr("y1", "0%")
+        .attr("x2", "100%")
+        .attr("y2", "0%");
 
-    g.append("g")
-      .attr("class", "x-axis")
-      .attr("transform", `translate(0,${chartHeight})`)
+      gradient.append("stop")
+        .attr("offset", "0%")
+        .attr("stop-color", gradients[color].start);
 
-    g.append("g")
-      .attr("class", "y-axis")
-
-    svg.append("text")
-      .attr("class", "ticker")
-      .attr("x", margin.left)
-      .attr("y", margin.top / 2)
-      .attr("text-anchor", "start")
-      .style("font-size", "16px")
-      .text(tickerText)
+      gradient.append("stop")
+        .attr("offset", "100%")
+        .attr("stop-color", gradients[color].end);
+    });
 
     startLiveUpdates()
   }
 
   function startLiveUpdates() {
-    console.log("Starting live updates")
-    tickerText = "Live updates: waiting for data..."
     
     try {
       eventSource = new EventSource(eventSourceUrl)
@@ -69,7 +72,6 @@
           counters = JSON.parse(e.data)
           
           latestTimestamp = new Date()
-          tickerText = `Live updates: ${latestTimestamp.toLocaleString()}`
           
           data = Object.entries(counters).map(([color, count]) => (
             {
@@ -86,14 +88,11 @@
       
       eventSource.onerror = (error) => {
         console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
-        tickerText = "Live updates: connection error"
       }
       
       console.log("EventSource connection established")
-      tickerText = "Live updates: connected"
     } catch (error) {
       console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
-      tickerText = "Live updates: failed to connect"
     }
   }
 
@@ -110,19 +109,6 @@
       .domain(data.map(d => d.color))
       .range([0, chartHeight])
       .padding(0.1)
-    
-    svg.select(".x-axis")
-      .transition()
-      .duration(delay)
-      .call(d3.axisBottom(xScale))
-    
-    svg.select(".y-axis")
-      .transition()
-      .duration(delay)
-      .call(d3.axisLeft(yScale))
-    
-    svg.select(".ticker")
-      .text(tickerText)
     
     const bars = svg.selectAll(".bar")
       .data(data, d => d.color)
@@ -141,10 +127,10 @@
     newBars.append("rect")
       .attr("height", yScale.bandwidth())
       .attr("width", 0)
-      .attr("fill", d => colorScale(d.color))
+      .attr("fill", d => `url(#gradient-${d.color})`)
       .transition()
       .duration(delay)
-      .attr("width", d => xScale(d.count))
+      .attr("width", d => xScale(d.count));
     
     newBars.append("text")
       .attr("class", "value-label")
@@ -162,7 +148,6 @@
       .transition()
       .duration(delay)
       .attr("width", d => xScale(d.count))
-      .attr("fill", d => colorScale(d.color))
     
     bars.select(".value-label")
       .transition()
