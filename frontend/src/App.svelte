@@ -12,13 +12,12 @@
   let counters = { red: 0, green: 0, blue: 0, purple: 0 }
   let margin = { top: 50, right: 120, bottom: 50, left: 150 }
   let data = []
-  let eventSourceUrl = 'http://localhost:8080/updates'
+  let event_source_url = 'http://localhost:8080/updates'
   let width = 800
   let height = 500
   let delay = 200
   let svg
-  let eventSource
-  let latestTimestamp
+  let event_source
 
   /*
     Constant Variables
@@ -73,23 +72,21 @@
 
   function start_live() {
     try {
-      eventSource = new EventSource(eventSourceUrl)
-      eventSource.onmessage = (e) => {
+      event_source = new EventSource(event_source_url)
+      event_source.onmessage = (e) => {
         try {
           counters = JSON.parse(e.data)
-          latestTimestamp = new Date()
           data = Object.entries(counters).map(([color, count]) => (
             {
              color, 
              count, 
-             timestamp: latestTimestamp 
             }))
             update_chart()
         } catch (parseError) {
           console.error("Error - (Svelte)updates - Failed to Parse Updates:", parseError)
         }
       }
-      eventSource.onerror = (error) => {
+      event_source.onerror = (error) => {
         console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
       }
       console.log("EventSource connection established")
@@ -156,7 +153,6 @@
       data = Object.entries(counters).map(([color, count]) => ({
         category: color,
         value: count,
-        timestamp: new Date()
       }))
       chart_init()
     } catch (error) {
@@ -168,17 +164,16 @@
     Clean Up
   */
   onDestroy(() => {
-    if (eventSource) {
-      eventSource.close()
+    if (event_source) {
+      event_source.close()
     }
   })
 </script>
 
-<div class="chart-container">
-  <div id="chart"></div>
-</div>
-
 <main>
+  <div class="chart-container">
+    <div id="chart"></div>
+  </div>
   <div class="buttons">
     {#each color_order.map(color => [color, counters[color]]) as [color, count]}
       <div class="button-wrapper">
@@ -205,7 +200,7 @@
 
   .buttons {
     position: fixed;
-    top: 2rem;
+    bottom: 2rem;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -237,12 +232,12 @@
     font-weight: bold;
     text-transform: capitalize;
     background-color: #fff;
-    min-width: 3.75rem;
-    min-height: 2.5em;
+    width: 4rem;
+    height: 3em;
   }
 
   button:hover {
-    transform: translateY(-1px);
+    transform: translateY(-2px);
   }
 
   button:focus {
@@ -256,5 +251,5 @@
   :global(.bar:hover rect) {
     opacity: 0.8;
   }
-  
+
 </style>
