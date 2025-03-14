@@ -1,30 +1,41 @@
 <script>
+  /*
+    Imports
+  */
   import "./app.css"
   import { onDestroy, onMount } from "svelte"
   import * as d3 from 'd3'
 
-  export let width = 800
-  export let height = 500
-  export let margin = { top: 50, right: 120, bottom: 50, left: 150 }
-  export let delay = 200
-  export let eventSourceUrl = 'http://localhost:8080/updates'
-
+  /*
+    Non-constant Variables
+  */
   let counters = { red: 0, green: 0, blue: 0, purple: 0 }
+  let margin = { top: 50, right: 120, bottom: 50, left: 150 }
   let data = []
+  let eventSourceUrl = 'http://localhost:8080/updates'
+  let width = 800
+  let height = 500
+  let delay = 200
   let svg
   let eventSource
   let latestTimestamp
 
-  const color_order = ["red", "green", "blue", "purple"]
-  const chartWidth = width - margin.left - margin.right
-  const chartHeight = height - margin.top - margin.bottom
+  /*
+    Constant Variables
+  */
   const gradients = {
     red: { start: '#ff6b6b', end: '#ff4757' },
     green: { start: '#4CAF50', end: '#388E3C' },
     blue: { start: '#2196F3', end: '#1976D2' },
     purple: { start: '#9C27B0', end: '#7B1FA2' }
   };
-  
+  const color_order = ["red", "green", "blue", "purple"]
+  const chartWidth = width - margin.left - margin.right
+  const chartHeight = height - margin.top - margin.bottom
+
+  /*
+    Counter Functions
+  */
   async function increment(color) {
     try {
       await fetch(`http://localhost:8080/increment/${color}`, { method: "POST" })
@@ -33,15 +44,16 @@
     }
   }
 
-  function initChart() {
-
+  /*
+    Bar Graph Functions
+  */
+  function chart_init() {
     svg = d3.select("#chart")
       .append("svg")
       .attr("viewBox", [0, 0, width, height])
       .attr("width", width)
       .attr("height", height)
       .attr("style", "max-width: 100%; height: auto;")
-
     color_order.forEach(color => {
       const gradient = (svg.append("defs")).append("linearGradient")
         .attr("id", `gradient-${color}`)
@@ -49,81 +61,63 @@
         .attr("y1", "0%")
         .attr("x2", "100%")
         .attr("y2", "0%");
-
       gradient.append("stop")
         .attr("offset", "0%")
         .attr("stop-color", gradients[color].start);
-
       gradient.append("stop")
         .attr("offset", "100%")
         .attr("stop-color", gradients[color].end);
     });
-
-    startLiveUpdates()
+    start_live()
   }
 
-  function startLiveUpdates() {
-    
+  function start_live() {
     try {
       eventSource = new EventSource(eventSourceUrl)
-      
       eventSource.onmessage = (e) => {
         try {
           counters = JSON.parse(e.data)
-          
           latestTimestamp = new Date()
-          
           data = Object.entries(counters).map(([color, count]) => (
             {
              color, 
              count, 
              timestamp: latestTimestamp 
             }))
-          
-          updateChart()
+            update_chart()
         } catch (parseError) {
           console.error("Error - (Svelte)updates - Failed to Parse Updates:", parseError)
         }
       }
-      
       eventSource.onerror = (error) => {
         console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
       }
-      
       console.log("EventSource connection established")
     } catch (error) {
       console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
     }
   }
 
-
-  function updateChart() {
-    
+  function update_chart() {
     data.sort((a, b) => b.count - a.count)
-    
     const xScale = d3.scaleLinear()
       .domain([0, d3.max(data, d => d.count) * 1.1])
       .range([0, chartWidth])
-    
     const yScale = d3.scaleBand()
       .domain(data.map(d => d.color))
       .range([0, chartHeight])
       .padding(0.1)
-    
     const bars = svg.selectAll(".bar")
       .data(data, d => d.color)
-    
     bars.exit()
       .transition()
       .duration(delay)
       .attr("width", 0)
       .remove()
-    
     const newBars = bars.enter()
       .append("g")
       .attr("class", "bar")
       .attr("transform", d => `translate(${margin.left},${margin.top + yScale(d.color)})`)
-    
     newBars.append("rect")
       .attr("height", yScale.bandwidth())
       .attr("width", 0)
@@ -131,7 +125,6 @@
       .transition()
       .duration(delay)
       .attr("width", d => xScale(d.count));
-    
     newBars.append("text")
       .attr("class", "value-label")
       .attr("x", d => xScale(d.count) + 5)
@@ -139,16 +132,13 @@
       .attr("dy", "0.35em")
       .style("font-size", "12px")
       .text(d => d.count.toLocaleString())
-    
     bars.transition()
       .duration(delay)
       .attr("transform", d => `translate(${margin.left},${margin.top + yScale(d.color)})`)
-    
     bars.select("rect")
       .transition()
       .duration(delay)
       .attr("width", d => xScale(d.count))
-    
     bars.select(".value-label")
       .transition()
       .duration(delay)
@@ -156,23 +146,27 @@
       .text(d => d.count.toLocaleString())
   }
 
+  /*
+    Startup
+  */
   onMount(async () => {
     try {
       const response = await fetch("http://localhost:8080/counters")
       counters = await response.json()
-
       data = Object.entries(counters).map(([color, count]) => ({
         category: color,
         value: count,
         timestamp: new Date()
       }))
-
-      initChart()
+      chart_init()
     } catch (error) {
       console.error("Error - (Svelte)onMount - Failed to Fetch Counters:", error)
     }
   })
 
+  /*
+    Clean Up
+  */
   onDestroy(() => {
     if (eventSource) {
       eventSource.close()
@@ -190,7 +184,7 @@
       <button 
         on:click={() => increment(color)}
       >
-        {color} ({count})
+        {color}
       </button>
     {/each}
   </div>
@@ -216,11 +210,12 @@
   }
   
   button {
-    padding: 1rem;
-    font-size: 1.2rem;
-    border: 2px solid black;
-    border-radius: 4px;
+    padding-left: 1rem;
+    font-size: 1rem;
+    border: 1px solid black;
+    border-radius: 0.5rem;
     font-weight: bold;
+    text-transform: capitalize;
   }
   
   :global(.bar:hover rect) {
