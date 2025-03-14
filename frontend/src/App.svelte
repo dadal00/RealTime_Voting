@@ -181,11 +181,15 @@
 <main>
   <div class="buttons">
     {#each color_order.map(color => [color, counters[color]]) as [color, count]}
-      <button 
-        on:click={() => increment(color)}
-      >
-        {color}
-      </button>
+      <div class="button-wrapper">
+        <div class="button-background" style="background-color: #E8E9EB; border-color: #424342;"></div>
+        <button 
+          style="border-color: #424342; color: {gradients[color]['start']}; background-color: {gradients[color]['start']};"
+          on:click={() => increment(color)}
+        >
+          {""}
+        </button>
+      </div>
     {/each}
   </div>
 </main>
@@ -198,7 +202,7 @@
     justify-content: center;
     align-items: center;
   }
-  
+
   .buttons {
     position: fixed;
     top: 2rem;
@@ -208,22 +212,49 @@
     gap: 1rem;
     padding: 0;
   }
+
+  .button-wrapper {
+    position: relative;
+    margin: 0 0.5rem;
+  }
+
+  .button-background {
+    position: absolute;
+    top: 2px;
+    left: 0;
+    right: 0;
+    height: calc(100% + 3px);
+    border: 1.5px solid black;
+    border-radius: 0.35rem;
+    z-index: -1;
+  }
   
   button {
     padding-left: 1rem;
-    font-size: 1rem;
-    border: 1px solid black;
-    border-radius: 0.5rem;
+    font-size: 0.75rem;
+    border: 1.5px solid black;
+    border-radius: 0.35rem;
     font-weight: bold;
     text-transform: capitalize;
+    background-color: #fff;
+    min-width: 3.75rem;
+    min-height: 2.5em;
+  }
+
+  button:hover {
+    transform: translateY(-1px);
+  }
+
+  button:focus {
+    outline: none;
+  }
+
+  button:active {
+    transform: translateY(1px);
   }
   
   :global(.bar:hover rect) {
     opacity: 0.8;
   }
   
-  :global(.value-label) {
-    font-family: sans-serif;
-    fill: #333;
-  }
 </style>
