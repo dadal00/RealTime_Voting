@@ -5,6 +5,8 @@
   import "./app.css"
   import { onDestroy, onMount } from "svelte"
   import * as d3 from 'd3'
+  import Particles from "./lib/Particles.svelte"
+  import Meteors from "./lib/Metors.svelte"
 
   /*
     Non-constant Variables
@@ -171,21 +173,25 @@
 </script>
 
 <main>
-  <div class="chart-container">
-    <div id="chart"></div>
-  </div>
-  <div class="buttons">
-    {#each color_order.map(color => [color, counters[color]]) as [color, count]}
-      <div class="button-wrapper">
-        <div class="button-background" style="background-color: #E8E9EB; border-color: #424342;"></div>
-        <button 
-          style="border-color: #424342; color: {gradients[color]['start']}; background-color: {gradients[color]['start']};"
-          on:click={() => increment(color)}
-        >
-          {""}
-        </button>
-      </div>
-    {/each}
+  <div style="background-color: black; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; overflow: hidden;">
+    <Particles className="absolute inset-0 z-[-1]" refresh={true} quantity={1000}/>
+    <Meteors number={30} />
+    <div class="chart-container">
+      <div id="chart"></div>
+    </div>
+    <div class="buttons">
+      {#each color_order.map(color => [color, counters[color]]) as [color, count]}
+        <div class="button-wrapper">
+          <div class="button-background" style="background-color: #E8E9EB; border-color: #424342;"></div>
+          <button 
+            style="border-color: #424342; color: {gradients[color]['start']}; background-color: {gradients[color]['start']};"
+            on:click={() => increment(color)}
+          >
+            {""}
+          </button>
+        </div>
+      {/each}
+    </div>
   </div>
 </main>
 
