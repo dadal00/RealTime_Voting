@@ -52,8 +52,19 @@ func Create_Client_Manager() *Client_Manager {
 }
 
 func (manager *Client_Manager) Start() {
+	periodic_user_check := time.NewTicker(500 * time.Millisecond)
+	defer periodic_user_check.Stop()
+
 	for {
 		select {
+		case <-periodic_user_check.C:
+			manager.mutex.Lock()
+			userCount := len(manager.clients)
+			manager.mutex.Unlock()
+
+			message := []byte(fmt.Sprintf(`{"type":"users","count":%d}`, userCount))
+			manager.Broadcast(message)
+
 		case connection := <-manager.register:
 			manager.mutex.Lock()
 			manager.clients[connection] = true

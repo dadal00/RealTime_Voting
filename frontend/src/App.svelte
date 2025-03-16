@@ -17,6 +17,7 @@
   let width = 900
   let height = 600
   let delay = 200
+  let concurrent_users = 0
   let chartWidth = width - margin.left - margin.right
   let chartHeight = height - margin.top - margin.bottom
   let svg
@@ -52,11 +53,17 @@
     
     socket.onmessage = (event) => {
       try {
-        data = Object.entries(JSON.parse(event.data)).map(([color, count]) => ({
-          color,
-          count
-        }))
-        update_chart()
+        const message = JSON.parse(event.data)
+        
+        if (message.type === "users") {
+            concurrent_users = message.count
+        } else {
+            data = Object.entries(message).map(([color, count]) => ({
+                color,
+                count
+            }))
+            update_chart()
+        }
       } catch (error) {
         console.error("Error parsing WebSocket data:", error)
       }
@@ -234,6 +241,9 @@
       <div class="connection-status" class:connected={connectionStatus === "connected"} class:disconnected={connectionStatus === "disconnected"} class:error={connectionStatus === "error"}>
         {connectionStatus}
       </div>
+      <div class="user-count" class:connected={connectionStatus === "connected"}>
+        Online: {concurrent_users}
+      </div>
       <div class="chart-container">
         <div id="chart"></div>
       </div>
@@ -270,6 +280,21 @@
 </main>
 
 <style>
+  .user-count {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 5px 10px;
+    border-radius: 5px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    font-size: 14px;
+    transition: opacity 0.3s;
+  }
+
+  .user-count.connected {
+    background-color: #4CAF50;
+  }
   .connection-status {
     position: absolute;
     top: 10px;
