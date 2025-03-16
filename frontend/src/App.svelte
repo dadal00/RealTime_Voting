@@ -17,7 +17,7 @@
   let click_animations = []
   let event_source_url = 'http://localhost:8080/updates'
   let width = 900
-  let height = 250
+  let height = 600
   let delay = 200
   let chartWidth = width - margin.left - margin.right
   let chartHeight = height - margin.top - margin.bottom
@@ -51,10 +51,6 @@
       y: event.clientY - rect.top - 20 + + (Math.random() * 6 - 3),
       color: gradients[color].start
     }];
-    console.log(click_animations)
-    setTimeout(() => {
-      click_animations = click_animations.filter(a => a.id !== id);
-    }, 5000);
   }
 
   /*
@@ -77,7 +73,7 @@
       .attr("viewBox", [0, 0, width, height])
       .attr("width", '100%')
       .attr("height", height)
-      .attr("style", "max-width: 100%; height: auto; left:0")
+      .attr("style", "max-width: 100%; height: auto; left:0;")
     
     svg.append("g")
       .attr("class", "headers")
@@ -134,7 +130,7 @@
     const yScale = d3.scaleBand()
       .domain(data.map(d => d.color))
       .range([0, chartHeight])
-      .padding(0.1)
+      .padding(0.5)
 
     /*
       Bars
@@ -163,11 +159,12 @@
 
     newBars.append("text")
       .attr("class", "value-label")
-      .attr("x", d => xScale(d.count) + 5)
-      .attr("y", yScale.bandwidth() / 2)
+      .attr("x", chartWidth - 5)
+      .attr("y", -12)
       .attr("dy", "0.35em")
       .style("font-size", "12px")
       .style("fill", "white")
+      .style("text-anchor", "end")
       .text(d => d.count.toLocaleString())
 
     bars.transition()
@@ -182,8 +179,9 @@
     bars.select(".value-label")
       .transition()
       .duration(delay)
-      .attr("x", d => xScale(d.count) + 5)
+      .attr("x", chartWidth - 5)
       .text(d => d.count.toLocaleString())
+      .style("text-anchor", "end")
   }
 
   /*
@@ -240,6 +238,7 @@
                   <span
                     class="click-animation"
                     style="left: {animation.x}px; top: {animation.y}px; color: gold"
+                    on:animationend={() => click_animations = click_animations.filter(a => a.id !== animation.id)}
                   >
                     +1
                   </span>
@@ -260,7 +259,7 @@
     font-weight: bold;
     font-size: 1rem;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    animation: fly-animation 5s linear infinite;
+    animation: fly-animation 5s linear;
   }
 
   @keyframes fly-animation {
@@ -291,6 +290,7 @@
     box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
     width: 90%;
     height: 90%;
+    overflow-y: auto;
   }
 
   .chart-container {
