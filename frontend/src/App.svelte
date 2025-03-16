@@ -12,12 +12,12 @@
     Non-constant Variables
   */
   let counters = { red: 0, green: 0, blue: 0, purple: 0 }
-  let margin = { top: 50, right: 120, bottom: 50, left: 150 }
+  let margin = { top: 50, right: 0, bottom: 50, left: 25 }
   let data = []
   let click_animations = []
   let event_source_url = 'http://localhost:8080/updates'
-  let width = 800
-  let height = 500
+  let width = 900
+  let height = 250
   let delay = 200
   let chartWidth = width - margin.left - margin.right
   let chartHeight = height - margin.top - margin.bottom
@@ -48,7 +48,7 @@
     click_animations = [...click_animations, {
       id,
       x: event.clientX - rect.left - 20 + (Math.random() * 6 - 3),
-      y: event.clientY - rect.top - 20,
+      y: event.clientY - rect.top - 20 + + (Math.random() * 6 - 3),
       color: gradients[color].start
     }];
     console.log(click_animations)
@@ -75,9 +75,14 @@
     svg = d3.select("#chart")
       .append("svg")
       .attr("viewBox", [0, 0, width, height])
-      .attr("width", width)
+      .attr("width", '100%')
       .attr("height", height)
-      .attr("style", "max-width: 100%; height: auto;")
+      .attr("style", "max-width: 100%; height: auto; left:0")
+    
+    svg.append("g")
+      .attr("class", "headers")
+      .attr("transform", `translate(${margin.left},${margin.top - 20})`);
+
     color_order.forEach(color => {
       const gradient = (svg.append("defs")).append("linearGradient")
         .attr("id", `gradient-${color}`)
@@ -121,31 +126,41 @@
 
   function update_chart() {
     data.sort((a, b) => b.count - a.count)
+
     const xScale = d3.scaleLinear()
       .domain([0, d3.max(data, d => d.count) * 1.1])
       .range([0, chartWidth])
+
     const yScale = d3.scaleBand()
       .domain(data.map(d => d.color))
       .range([0, chartHeight])
       .padding(0.1)
+
+    /*
+      Bars
+    */
     const bars = svg.selectAll(".bar")
       .data(data, d => d.color)
+
     bars.exit()
       .transition()
       .duration(delay)
       .attr("width", 0)
       .remove()
+
     const newBars = bars.enter()
       .append("g")
       .attr("class", "bar")
       .attr("transform", d => `translate(${margin.left},${margin.top + yScale(d.color)})`)
+    
     newBars.append("rect")
       .attr("height", yScale.bandwidth())
       .attr("width", 0)
       .attr("fill", d => `url(#gradient-${d.color})`)
       .transition()
       .duration(delay)
-      .attr("width", d => xScale(d.count));
+      .attr("width", d => xScale(d.count))
+
     newBars.append("text")
       .attr("class", "value-label")
       .attr("x", d => xScale(d.count) + 5)
@@ -154,13 +169,16 @@
       .style("font-size", "12px")
       .style("fill", "white")
       .text(d => d.count.toLocaleString())
+
     bars.transition()
       .duration(delay)
       .attr("transform", d => `translate(${margin.left},${margin.top + yScale(d.color)})`)
+    
     bars.select("rect")
       .transition()
       .duration(delay)
       .attr("width", d => xScale(d.count))
+      
     bars.select(".value-label")
       .transition()
       .duration(delay)
