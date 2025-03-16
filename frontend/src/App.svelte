@@ -11,19 +11,18 @@
   /*
     Non-constant Variables
   */
-  let counters = { red: 0, green: 0, blue: 0, purple: 0 }
   let margin = { top: 50, right: 0, bottom: 50, left: 25 }
   let data = []
   let click_animations = []
-  let event_source_url = 'http://localhost:8080/updates'
   let width = 900
   let height = 600
   let delay = 200
   let chartWidth = width - margin.left - margin.right
   let chartHeight = height - margin.top - margin.bottom
   let svg
-  let event_source
-
+  let socket
+  let connectionStatus = "connecting"
+  
   /*
     Constant Variables
   */
@@ -34,9 +33,46 @@
     purple: { start: '#9C27B0', end: '#7B1FA2' }
   };
   const color_order = ["red", "green", "blue", "purple"]
+  const wsUrl = 'ws://localhost:8080/ws'
 
   $: chartWidth = width - margin.left - margin.right;
   $: chartHeight = height - margin.top - margin.bottom;
+
+  /*
+    WebSocket Functions
+  */
+  function connectWebSocket() {
+    socket = new WebSocket(wsUrl)
+    socket.binaryType = "arraybuffer"
+    
+    socket.onopen = () => {
+      console.log("WebSocket connection established")
+      connectionStatus = "connected"
+    }
+    
+    socket.onmessage = (event) => {
+      try {
+        data = Object.entries(JSON.parse(event.data)).map(([color, count]) => ({
+          color,
+          count
+        }))
+        update_chart()
+      } catch (error) {
+        console.error("Error parsing WebSocket data:", error)
+      }
+    }
+    
+    socket.onclose = () => {
+      console.log("WebSocket connection closed")
+      connectionStatus = "disconnected"
+      setTimeout(connectWebSocket, 3000)
+    }
+    
+    socket.onerror = (error) => {
+      console.error("WebSocket error:", error)
+      connectionStatus = "error"
+    }
+  }
 
   /*
     Click Animation Functions
@@ -48,7 +84,7 @@
     click_animations = [...click_animations, {
       id,
       x: event.clientX - rect.left - 20 + (Math.random() * 6 - 3),
-      y: event.clientY - rect.top - 20 + + (Math.random() * 6 - 3),
+      y: event.clientY - rect.top - 20 + (Math.random() * 6 - 3),
       color: gradients[color].start
     }];
   }
@@ -93,34 +129,11 @@
         .attr("offset", "100%")
         .attr("stop-color", gradients[color].end);
     });
-    start_live()
-  }
-
-  function start_live() {
-    try {
-      event_source = new EventSource(event_source_url)
-      event_source.onmessage = (e) => {
-        try {
-          counters = JSON.parse(e.data)
-          data = Object.entries(counters).map(([color, count]) => (
-            {
-             color, 
-             count, 
-            }))
-            update_chart()
-        } catch (parseError) {
-          console.error("Error - (Svelte)updates - Failed to Parse Updates:", parseError)
-        }
-      }
-      event_source.onerror = (error) => {
-        console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
-      }
-    } catch (error) {
-      console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
-    }
   }
 
   function update_chart() {
+    if (!svg) return;
+
     data.sort((a, b) => b.count - a.count)
 
     const xScale = d3.scaleLinear()
@@ -189,13 +202,15 @@
   */
   onMount(async () => {
     try {
-      const response = await fetch("http://localhost:8080/counters")
-      counters = await response.json()
-      data = Object.entries(counters).map(([color, count]) => ({
-        category: color,
-        value: count,
-      }))
       chart_init()
+      const response = await fetch("http://localhost:8080/counters")
+      const counters = await response.json()
+      data = Object.entries(counters).map(([color, count]) => ({
+        color,
+        count,
+      }))
+      update_chart()
+      connectWebSocket()
     } catch (error) {
       console.error("Error - (Svelte)onMount - Failed to Fetch Counters:", error)
     }
@@ -205,8 +220,8 @@
     Clean Up
   */
   onDestroy(() => {
-    if (event_source) {
-      event_source.close()
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close()
     }
   })
 </script>
@@ -216,11 +231,14 @@
     <Particles className="absolute inset-0 z-[-1]" refresh={true} quantity={1000}/>
     <Meteors number={30} />
     <div class="glass-container">
+      <div class="connection-status" class:connected={connectionStatus === "connected"} class:disconnected={connectionStatus === "disconnected"} class:error={connectionStatus === "error"}>
+        {connectionStatus}
+      </div>
       <div class="chart-container">
         <div id="chart"></div>
       </div>
       <div class="buttons">
-        {#each color_order.map(color => [color, counters[color]]) as [color, count]}
+        {#each color_order.map(color => [color]) as color}
           <div class="button-wrapper">
             <div class="button-background" style="background-color: #E8E9EB; border-color: #424342;"></div>
             <button 
@@ -252,6 +270,28 @@
 </main>
 
 <style>
+  .connection-status {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    color: white;
+    background-color: #555;
+  }
+
+  .connected {
+    background-color: #4CAF50;
+  }
+
+  .disconnected {
+    background-color: #FF9800;
+  }
+
+  .error {
+    background-color: #F44336;
+  }
 
   .click-animation {
     position: absolute;

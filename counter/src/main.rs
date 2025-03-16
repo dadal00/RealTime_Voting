@@ -1,47 +1,77 @@
 use axum::{
+    extract::Path,
     routing::{get, post},
     http::{Method, StatusCode},
     Json, Router,
 };
-
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::trace::TraceLayer;
+use rdkafka::{
+    config::ClientConfig,
+    producer::{FutureProducer, FutureRecord},
+};
+use serde::{Deserialize, Serialize};
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-#[derive(Default)]
-struct AppState {
-    counters: [AtomicU64; 4],
-}
+const KAFKA_BROKERS: &str = "localhost:9092";
+const COUNTERS_TOPIC: &str = "counters-updates";
 
-impl AppState {
-    fn increment(&self, color: &str) -> Option<u64> {
-        match color {
-            "red" => Some(self.counters[0].fetch_add(1, Ordering::Relaxed)),
-            "green" => Some(self.counters[1].fetch_add(1, Ordering::Relaxed)),
-            "blue" => Some(self.counters[2].fetch_add(1, Ordering::Relaxed)),
-            "purple" => Some(self.counters[3].fetch_add(1, Ordering::Relaxed)),
-            _ => None,
-        }
-    }
+static RED_COUNTER: AtomicU64 = AtomicU64::new(0);
+static GREEN_COUNTER: AtomicU64 = AtomicU64::new(0);
+static BLUE_COUNTER: AtomicU64 = AtomicU64::new(0);
+static PURPLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    fn get_all(&self) -> Counters {
-        Counters {
-            red: self.counters[0].load(Ordering::Relaxed),
-            green: self.counters[1].load(Ordering::Relaxed),
-            blue: self.counters[2].load(Ordering::Relaxed),
-            purple: self.counters[3].load(Ordering::Relaxed),
-        }
-    }
-}
+static PRODUCER: std::sync::OnceLock<FutureProducer> = std::sync::OnceLock::new();
 
-#[derive(serde::Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Counters {
     red: u64,
     green: u64,
     blue: u64,
     purple: u64,
+}
+
+fn get_all_counters() -> Counters {
+    Counters {
+        red: RED_COUNTER.load(Ordering::Relaxed),
+        green: GREEN_COUNTER.load(Ordering::Relaxed),
+        blue: BLUE_COUNTER.load(Ordering::Relaxed),
+        purple: PURPLE_COUNTER.load(Ordering::Relaxed),
+    }
+}
+
+async fn increment_counter(color: &str) -> Result<u64, ()> {
+    let counter = match color {
+        "red" => &RED_COUNTER,
+        "green" => &GREEN_COUNTER,
+        "blue" => &BLUE_COUNTER,
+        "purple" => &PURPLE_COUNTER,
+        _ => return Err(()),
+    };
+
+    let previous = counter.fetch_add(1, Ordering::Relaxed);
+
+    if let Some(producer) = PRODUCER.get() {
+        let counters = get_all_counters();
+        let payload = serde_json::to_string(&counters).unwrap_or_default();
+        
+        let record = FutureRecord::to(COUNTERS_TOPIC)
+            .key(color)
+            .payload(&payload);
+
+        match producer.send(record, Duration::from_secs(2)).await {
+            Ok(_) => tracing::debug!("Published update for {}", color),
+            Err((e, _)) => tracing::error!("Kafka error: {}", e),
+        }
+    }
+
+    Ok(previous)
 }
 
 #[tokio::main]
@@ -52,12 +82,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(EnvFilter::new("info")) // the specific level of logging that can be changed
         .init();
     
-    let state = Arc::new(AppState::default());
+    PRODUCER.get_or_init(|| {
+        let mut config = ClientConfig::new();
+        config
+            .set("bootstrap.servers", KAFKA_BROKERS)
+            .set("message.timeout.ms", "500")
+            .set("linger.ms", "0") 
+            .set("socket.timeout.ms", "1000")
+            .set("reconnect.backoff.ms", "100")
+            .set("reconnect.backoff.max.ms", "1000")
+            .set("queue.buffering.max.messages", "1");
+        
+        config.create().expect("Failed to create Kafka producer")
+    });
 
     let app = Router::new()
-        .route("/increment/:color", post(increment))
-        .route("/counters", get(get_counters))
-        .with_state(state)
+        .route("/increment/:color", post(handle_increment))
+        .route("/counters", get(handle_get_counters))
         .layer(CorsLayer::new() // the CORS customizations 
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
@@ -74,22 +115,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn increment(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    axum::extract::Path(color): axum::extract::Path<String>,
+async fn handle_increment(
+        Path(color): Path<String>,
     ) -> Result<StatusCode, StatusCode> {
-
-    state.increment(&color)
+    increment_counter(&color).await
         .map(|previous| {
-            tracing::debug!("(Debug)Status - (Rust)increment - Incremented {} Counter to {}", color, previous + 1);
+            tracing::debug!("Incremented {} to {}", color, previous + 1);
             StatusCode::OK
         })
-        .ok_or(StatusCode::BAD_REQUEST)
+        .map_err(|_| StatusCode::BAD_REQUEST)
 }
 
-async fn get_counters(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    ) -> Json<Counters> {
-    
-    Json(state.get_all())
+async fn handle_get_counters() -> Json<Counters> {
+    Json(get_all_counters())
 }

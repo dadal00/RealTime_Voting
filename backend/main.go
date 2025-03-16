@@ -6,60 +6,86 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+	"github.com/segmentio/kafka-go"
 )
 
 const (
-	port                  = ":8080"
-	update_channel_buffer = 10
+	port             = ":8080"
+	kafka_broker     = "localhost:9092"
+	counters_topic   = "counters-updates"
+	rust_service_url = "http://localhost:3000"
 )
 
-type Broker struct {
-	clients map[chan []byte]bool
-	mutex   sync.Mutex
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:    1024,
+	WriteBufferSize:   1024,
+	EnableCompression: true,
+	HandshakeTimeout:  500 * time.Millisecond,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins in development
+	},
 }
 
-func create_broker() *Broker {
-	return &Broker{
-		clients: make(map[chan []byte]bool),
+type Client_Manager struct {
+	clients    map[*websocket.Conn]bool
+	broadcast  chan []byte
+	register   chan *websocket.Conn
+	unregister chan *websocket.Conn
+	mutex      sync.Mutex
+}
+
+func Create_Client_Manager() *Client_Manager {
+	return &Client_Manager{
+		clients:    make(map[*websocket.Conn]bool),
+		broadcast:  make(chan []byte, 10),
+		register:   make(chan *websocket.Conn),
+		unregister: make(chan *websocket.Conn),
 	}
 }
 
-func (broker *Broker) add_client() chan []byte {
-	broker.mutex.Lock()
-	defer broker.mutex.Unlock()
-
-	channel := make(chan []byte, update_channel_buffer)
-	broker.clients[channel] = true
-	return channel
-}
-
-func (broker *Broker) remove_client(channel chan []byte) {
-	broker.mutex.Lock()
-	defer broker.mutex.Unlock()
-
-	delete(broker.clients, channel)
-	close(channel)
-}
-
-func (broker *Broker) broadcast(data []byte) {
-	broker.mutex.Lock()
-	defer broker.mutex.Unlock()
-
-	for client := range broker.clients {
+func (manager *Client_Manager) Start() {
+	for {
 		select {
-		case client <- data:
-		default:
-			delete(broker.clients, client)
-			close(client)
+		case connection := <-manager.register:
+			manager.mutex.Lock()
+			manager.clients[connection] = true
+			manager.mutex.Unlock()
+			log.Printf("Client connected. Total connections: %d", len(manager.clients))
+
+		case connection := <-manager.unregister:
+			manager.mutex.Lock()
+			if _, ok := manager.clients[connection]; ok {
+				delete(manager.clients, connection)
+				connection.Close()
+			}
+			manager.mutex.Unlock()
+			log.Printf("Client disconnected. Total connections: %d", len(manager.clients))
+
+		case message := <-manager.broadcast:
+			manager.mutex.Lock()
+			for connection := range manager.clients {
+				err := connection.WriteMessage(websocket.TextMessage, message)
+				if err != nil {
+					connection.Close()
+					delete(manager.clients, connection)
+				}
+			}
+			manager.mutex.Unlock()
 		}
 	}
 }
 
-var broker = create_broker()
+func (manager *Client_Manager) Broadcast(message []byte) {
+	manager.broadcast <- message
+}
 
 func main() {
 
@@ -71,110 +97,131 @@ func main() {
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	})
 
-	router.POST("/increment/:color", increment_handler)
-	router.GET("/updates", update_handler)
-	router.GET("/counters", counter_handler)
+	manager := Create_Client_Manager()
+	go manager.Start()
 
-	fmt.Println("Status - (Go)Program running on " + port)
-	router.Run(port)
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:     []string{kafka_broker},
+		Topic:       counters_topic,
+		GroupID:     "counter-service",
+		MinBytes:    1,
+		MaxBytes:    1e6,
+		StartOffset: kafka.LastOffset,
+		MaxWait:     100 * time.Millisecond,
+	})
+
+	writer := kafka.NewWriter(kafka.WriterConfig{
+		Brokers: []string{kafka_broker},
+		Topic:   counters_topic,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				message, err := reader.ReadMessage(ctx)
+				if err != nil {
+					log.Printf("Error reading from Kafka: %v", err)
+					continue
+				}
+
+				manager.Broadcast(message.Value)
+			}
+		}
+	}()
+
+	router.POST("/increment/:color", func(c *gin.Context) {
+		color := c.Param("color")
+		increment_handler(c, color)
+	})
+	router.GET("/counters", counters_handler)
+	router.GET("/ws", func(c *gin.Context) {
+		websocket_handler(c, manager)
+	})
+
+	srv := &http.Server{
+		Addr:    port,
+		Handler: router,
+	}
+
+	go func() {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		<-quit
+		log.Println("Shutting down server...")
+
+		if err := reader.Close(); err != nil {
+			log.Printf("Failed to close Kafka reader: %v", err)
+		}
+		if err := writer.Close(); err != nil {
+			log.Printf("Failed to close Kafka writer: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Server forced to shutdown: %v", err)
+		}
+	}()
+
+	log.Printf("Server running on %s", port)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
 
-func increment_handler(c *gin.Context) {
-
-	color := c.Param("color")
-
-	response, err := http.Post("http://localhost:3000/increment/"+color, "text/plain", nil)
+func increment_handler(c *gin.Context, color string) {
+	response, err := http.Post(fmt.Sprintf("%s/increment/%s", rust_service_url, color), "text/plain", nil)
 	if err != nil {
-		log.Println("Error - (Go)increment_handler - Failed to Increment:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error - (Go)increment_handler - Failed to Increment"})
+		log.Printf("Error forwarding increment request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to increment counter"})
 		return
 	}
 	defer response.Body.Close()
-
-	go func() {
-		client := &http.Client{Timeout: 2 * time.Second}
-		response, err := client.Get("http://localhost:3000/counters")
-		if err != nil {
-			log.Println("Error - (Go)increment_handler - Failed to fetch updated counters:", err)
-			return
-		}
-		defer response.Body.Close()
-
-		body, err := io.ReadAll(response.Body)
-		if err != nil {
-			log.Println("Error - (Go)increment_handler - Failed to read counters:", err)
-			return
-		}
-
-		broker.broadcast(body)
-	}()
 
 	c.Status(http.StatusOK)
 }
 
-func counter_handler(c *gin.Context) {
-
-	client := &http.Client{Timeout: 2 * time.Second}
-
-	response, err := client.Get("http://localhost:3000/counters")
+func counters_handler(c *gin.Context) {
+	counters, err := fetchCounters()
 	if err != nil {
-		log.Println("Error - (Go)counter_handler - Failed to Fetch Counters:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error - (Go)counter_handler - Failed to Fetch Counters"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch counters"})
 		return
 	}
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		log.Println("Error - (Go)counter_handler - Failed to Read Response:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error - (Go)counter_handler - Failed to Read Response"})
-		return
-	}
-
-	c.Data(http.StatusOK, "application/json", body)
+	c.Data(http.StatusOK, "application/json", counters)
 }
 
-func update_handler(c *gin.Context) {
-
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-
-	w := c.Writer
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		c.AbortWithStatus(http.StatusInternalServerError)
+func websocket_handler(c *gin.Context, manager *Client_Manager) {
+	connection, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade connection: %v", err)
 		return
 	}
 
-	client_channel := broker.add_client()
-	defer broker.remove_client(client_channel)
+	manager.register <- connection
 
-	initialCounters, err := fetch_initial_counters()
+	initial_counters, err := fetchCounters()
 	if err == nil {
-		fmt.Fprintf(w, "data: %s\n\n", initialCounters)
-		flusher.Flush()
+		connection.WriteMessage(websocket.TextMessage, initial_counters)
 	}
 
-	cancellable_context, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
-
 	for {
-		select {
-		case data := <-client_channel:
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
-		case <-cancellable_context.Done():
-			return
+		_, _, err := connection.ReadMessage()
+		if err != nil {
+			manager.unregister <- connection
+			break
 		}
 	}
 }
 
-func fetch_initial_counters() ([]byte, error) {
-
+func fetchCounters() ([]byte, error) {
 	client := &http.Client{Timeout: 2 * time.Second}
-
-	response, err := client.Get("http://localhost:3000/counters")
+	response, err := client.Get(fmt.Sprintf("%s/counters", rust_service_url))
 	if err != nil {
 		return nil, err
 	}
