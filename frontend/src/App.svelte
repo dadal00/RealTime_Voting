@@ -14,10 +14,13 @@
   let counters = { red: 0, green: 0, blue: 0, purple: 0 }
   let margin = { top: 50, right: 120, bottom: 50, left: 150 }
   let data = []
+  let click_animations = []
   let event_source_url = 'http://localhost:8080/updates'
   let width = 800
   let height = 500
   let delay = 200
+  let chartWidth = width - margin.left - margin.right
+  let chartHeight = height - margin.top - margin.bottom
   let svg
   let event_source
 
@@ -31,8 +34,28 @@
     purple: { start: '#9C27B0', end: '#7B1FA2' }
   };
   const color_order = ["red", "green", "blue", "purple"]
-  const chartWidth = width - margin.left - margin.right
-  const chartHeight = height - margin.top - margin.bottom
+
+  $: chartWidth = width - margin.left - margin.right;
+  $: chartHeight = height - margin.top - margin.bottom;
+
+  /*
+    Click Animation Functions
+  */
+  function create_click_animation(event, color) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const id = Date.now();
+    
+    click_animations = [...click_animations, {
+      id,
+      x: event.clientX - rect.left - 20 + (Math.random() * 6 - 3),
+      y: event.clientY - rect.top - 20,
+      color: gradients[color].start
+    }];
+    console.log(click_animations)
+    setTimeout(() => {
+      click_animations = click_animations.filter(a => a.id !== id);
+    }, 5000);
+  }
 
   /*
     Counter Functions
@@ -91,7 +114,6 @@
       event_source.onerror = (error) => {
         console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
       }
-      console.log("EventSource connection established")
     } catch (error) {
       console.error("Error - (Svelte)updates - Failed to Fetch Updates:", error)
     }
@@ -130,6 +152,7 @@
       .attr("y", yScale.bandwidth() / 2)
       .attr("dy", "0.35em")
       .style("font-size", "12px")
+      .style("fill", "white")
       .text(d => d.count.toLocaleString())
     bars.transition()
       .duration(delay)
@@ -176,36 +199,93 @@
   <div style="background-color: black; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; overflow: hidden;">
     <Particles className="absolute inset-0 z-[-1]" refresh={true} quantity={1000}/>
     <Meteors number={30} />
-    <div class="chart-container">
-      <div id="chart"></div>
-    </div>
-    <div class="buttons">
-      {#each color_order.map(color => [color, counters[color]]) as [color, count]}
-        <div class="button-wrapper">
-          <div class="button-background" style="background-color: #E8E9EB; border-color: #424342;"></div>
-          <button 
-            style="border-color: #424342; color: {gradients[color]['start']}; background-color: {gradients[color]['start']};"
-            on:click={() => increment(color)}
-          >
-            {""}
-          </button>
-        </div>
-      {/each}
+    <div class="glass-container">
+      <div class="chart-container">
+        <div id="chart"></div>
+      </div>
+      <div class="buttons">
+        {#each color_order.map(color => [color, counters[color]]) as [color, count]}
+          <div class="button-wrapper">
+            <div class="button-background" style="background-color: #E8E9EB; border-color: #424342;"></div>
+            <button 
+              style="border-color: #424342; color: {gradients[color]['start']}; background-color: {gradients[color]['start']};"
+              on:click={(e) => 
+              {
+                increment(color);
+                create_click_animation(e, color);
+              }}
+            >
+              {""}
+            </button>
+            {#each click_animations as animation (animation.id)}
+                {#if animation.color === gradients[color].start}
+                  <span
+                    class="click-animation"
+                    style="left: {animation.x}px; top: {animation.y}px; color: gold"
+                  >
+                    +1
+                  </span>
+                {/if}
+              {/each}
+          </div>
+        {/each}
+      </div>
     </div>
   </div>
 </main>
 
 <style>
+
+  .click-animation {
+    position: absolute;
+    pointer-events: none;
+    font-weight: bold;
+    font-size: 1rem;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    animation: fly-animation 5s linear infinite;
+  }
+
+  @keyframes fly-animation {
+    0% {  
+      transform: translate(0, 0);
+      opacity: 0.7;
+    }
+    50% {
+      transform: translate(0px, -200px);
+      opacity: 0.35;
+    }
+    100% {
+      transform: translate(0px, -400px);
+      opacity: 0;
+    }
+  }
+
+  .glass-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: transparent;
+    backdrop-filter: blur(2px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1rem;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    width: 90%;
+    height: 90%;
+  }
+
   .chart-container {
     width: 100%;
     height: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
+    position: relative;
   }
 
   .buttons {
-    position: fixed;
+    position: absolute;
     bottom: 2rem;
     left: 50%;
     transform: translateX(-50%);
