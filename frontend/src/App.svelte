@@ -17,6 +17,7 @@
   let width = 900
   let height = 600
   let delay = 200
+  let total_votes = 0;
   let concurrent_users = 0
   let chartWidth = width - margin.left - margin.right
   let chartHeight = height - margin.top - margin.bottom
@@ -58,10 +59,14 @@
         if (message.type === "users") {
             concurrent_users = message.count
         } else {
-            data = Object.entries(message).map(([color, count]) => ({
+            data = Object.entries(message)
+            .filter(([color]) => color !== "total")
+            .map(([color, count]) => ({
                 color,
                 count
             }))
+
+            total_votes = message.total || total_votes;
             update_chart()
         }
       } catch (error) {
@@ -212,10 +217,14 @@
       chart_init()
       const response = await fetch("http://localhost:8080/counters")
       const counters = await response.json()
-      data = Object.entries(counters).map(([color, count]) => ({
-        color,
-        count,
+      data = Object.entries(counters)
+        .filter(([color]) => color !== "total")
+        .map(([color, count]) => ({
+          color,
+          count,
       }))
+
+      total_votes = counters.total || total_votes;
       update_chart()
       connectWebSocket()
     } catch (error) {
@@ -238,6 +247,9 @@
     <Particles className="absolute inset-0 z-[-1]" refresh={true} quantity={1000}/>
     <Meteors number={30} />
     <div class="glass-container">
+      <div class="total-votes">
+        Total Votes: <span class="total-number">{total_votes.toLocaleString()}</span>
+      </div>
       <div class="connection-status" class:connected={connectionStatus === "connected"} class:disconnected={connectionStatus === "disconnected"} class:error={connectionStatus === "error"}>
         {connectionStatus}
       </div>
@@ -280,6 +292,25 @@
 </main>
 
 <style>
+  .total-votes {
+    position: absolute;
+    bottom: 6rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.7);
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    white-space: nowrap;
+  }
+
+  .total-number {
+    color: #FFD700;
+    margin-left: 0.5rem;
+  }
   .user-count {
     position: absolute;
     top: 10px;

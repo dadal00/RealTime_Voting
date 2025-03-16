@@ -27,6 +27,8 @@ static GREEN_COUNTER: AtomicU64 = AtomicU64::new(0);
 static BLUE_COUNTER: AtomicU64 = AtomicU64::new(0);
 static PURPLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+static TOTAL_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 static PRODUCER: std::sync::OnceLock<FutureProducer> = std::sync::OnceLock::new();
 
 #[derive(Serialize, Deserialize)]
@@ -35,6 +37,7 @@ struct Counters {
     green: u64,
     blue: u64,
     purple: u64,
+    total: u64,
 }
 
 fn get_all_counters() -> Counters {
@@ -43,6 +46,7 @@ fn get_all_counters() -> Counters {
         green: GREEN_COUNTER.load(Ordering::Relaxed),
         blue: BLUE_COUNTER.load(Ordering::Relaxed),
         purple: PURPLE_COUNTER.load(Ordering::Relaxed),
+        total: TOTAL_COUNTER.load(Ordering::Relaxed),
     }
 }
 
@@ -56,6 +60,7 @@ async fn increment_counter(color: &str) -> Result<u64, ()> {
     };
 
     let previous = counter.fetch_add(1, Ordering::Relaxed);
+    TOTAL_COUNTER.fetch_add(1, Ordering::Relaxed);
 
     if let Some(producer) = PRODUCER.get() {
         let counters = get_all_counters();
