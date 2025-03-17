@@ -29,7 +29,7 @@ const config = {
       },
       animation: {
         meteor: "meteor 5s linear infinite",
-        gradient: "gradient 8s linear infinite",
+        gradient: "gradient 5s linear infinite",
       },
       keyframes: {
         meteor: {
@@ -41,9 +41,8 @@ const config = {
           },
         },
         gradient: {
-          to: {
-            "background-position": "200% center",
-          },
+          "0%": { "background-position": "0% center" },
+          "100%": { "background-position": "-200% center" },
         },
       },
     }

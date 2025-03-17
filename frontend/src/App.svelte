@@ -30,10 +30,12 @@
     Constant Variables
   */
   const gradients = {
-    red: { start: '#ff6b6b', end: '#ff4757' },
-    green: { start: '#4CAF50', end: '#388E3C' },
-    blue: { start: '#2196F3', end: '#1976D2' },
-    purple: { start: '#9C27B0', end: '#7B1FA2' }
+    //Current Ordering 
+    //start: Dark, end: Light
+    red: { start: '#be2047', end: '#FF7477' },
+    green: { start: '#04773B', end: '#85f9a2' },
+    blue: { start: '#2081C3', end: '#74d7ff' },
+    purple: { start: '#8e04e0', end: '#9175bd' }
   };
   const color_order = ["red", "green", "blue", "purple"]
   const wsUrl = 'ws://localhost:8080/ws'
@@ -265,31 +267,30 @@
           <div class="button-wrapper">
             <div 
               class={cn(
-                "[--bg-size:300%]", "button-background"
+                "[--bg-size:200%]", "button-background"
               )}
             >
               <div
                 class={cn(
-                  "absolute inset-0 block h-full w-full animate-gradient bg-gradient-to-r from-[#2081C3] via-[#78D5D7] to-[#2081C3] bg-[length:var(--bg-size)_100%] p-[1px] [border-radius:inherit] [mask:linear-gradient(#fff_0_0)_content-box,linear-gradient(#fff_0_0)]"
+                  `absolute inset-0 block h-full w-full animate-gradient bg-gradient-to-r bg-[length:var(--bg-size)_100%] p-[1px] [border-radius:inherit] [mask:linear-gradient(#fff_0_0)_content-box,linear-gradient(#fff_0_0)]`
                 )}
+                style="background-image: linear-gradient(to right, 
+                  {gradients[color].start}, 
+                  {gradients[color].end}, 
+                  {gradients[color].start}
+                  );"
               ></div>
             </div>
             <button 
-              class="[--bg-size:300%]"
-              style="color: {gradients[color]['start']};"
+              class="[--bg-size:200%]"
+              style="color: {gradients[color]['end']};"
               on:click={(e) => 
               {
                 increment(color);
                 create_click_animation(e, color);
               }}
             >
-              <span
-                class={cn(
-                  `inline animate-gradient bg-gradient-to-r from-[#2081C3] via-[#78D5D7] to-[#2081C3] bg-[length:var(--bg-size)_100%] bg-clip-text text-transparent`
-                )}
-              >
-                {color}
-              </span>
+              {color}
             </button>
             {#each click_animations as animation (animation.id)}
                 {#if animation.color === gradients[color].start}
