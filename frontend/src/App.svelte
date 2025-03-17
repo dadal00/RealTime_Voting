@@ -7,6 +7,7 @@
   import * as d3 from 'd3'
   import Particles from "./lib/Particles.svelte"
   import Meteors from "./lib/Metors.svelte"
+  import { cn } from "./lib/utils";
 
   /*
     Non-constant Variables
@@ -260,18 +261,35 @@
         <div id="chart"></div>
       </div>
       <div class="buttons">
-        {#each color_order.map(color => [color]) as color}
+        {#each color_order as color}
           <div class="button-wrapper">
-            <div class="button-background" style="background-color: #E8E9EB; border-color: #424342;"></div>
+            <div 
+              class={cn(
+                "[--bg-size:300%]", "button-background"
+              )}
+            >
+              <div
+                class={cn(
+                  "absolute inset-0 block h-full w-full animate-gradient bg-gradient-to-r from-[#2081C3] via-[#78D5D7] to-[#2081C3] bg-[length:var(--bg-size)_100%] p-[1px] [border-radius:inherit] [mask:linear-gradient(#fff_0_0)_content-box,linear-gradient(#fff_0_0)]"
+                )}
+              ></div>
+            </div>
             <button 
-              style="border-color: #424342; color: {gradients[color]['start']}; background-color: {gradients[color]['start']};"
+              class="[--bg-size:300%]"
+              style="color: {gradients[color]['start']};"
               on:click={(e) => 
               {
                 increment(color);
                 create_click_animation(e, color);
               }}
             >
-              {""}
+              <span
+                class={cn(
+                  `inline animate-gradient bg-gradient-to-r from-[#2081C3] via-[#78D5D7] to-[#2081C3] bg-[length:var(--bg-size)_100%] bg-clip-text text-transparent`
+                )}
+              >
+                {color}
+              </span>
             </button>
             {#each click_animations as animation (animation.id)}
                 {#if animation.color === gradients[color].start}
@@ -383,7 +401,7 @@
     border-radius: 20px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     padding: 1rem;
-    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    box-shadow: 0 8px 32px 0 #1f26875e;
     width: 90%;
     height: 90%;
     overflow-y: auto;
@@ -415,11 +433,10 @@
 
   .button-background {
     position: absolute;
-    top: 2px;
+    top: 0;
     left: 0;
     right: 0;
     height: calc(100% + 3px);
-    border: 1.5px solid black;
     border-radius: 0.35rem;
     z-index: -1;
   }
@@ -427,17 +444,30 @@
   button {
     padding-left: 1rem;
     font-size: 0.75rem;
-    border: 1.5px solid black;
     border-radius: 0.35rem;
     font-weight: bold;
     text-transform: capitalize;
-    background-color: #fff;
-    width: 4rem;
-    height: 3em;
+    display: flex;
+    justify-content: center; 
+    align-items: center;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    background-color: black;
   }
 
   button:hover {
     transform: translateY(-2px);
+    outline: none;
+  }
+
+  .button-wrapper:hover .button-background {
+    top:-2px;
+    height: calc(100% + 5px);
+  }
+
+  .button-wrapper:active .button-background {
+    top:0px;
+    height: calc(100% + 3px);
   }
 
   button:focus {

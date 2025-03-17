@@ -29,6 +29,7 @@ const config = {
       },
       animation: {
         meteor: "meteor 5s linear infinite",
+        gradient: "gradient 8s linear infinite",
       },
       keyframes: {
         meteor: {
@@ -37,6 +38,11 @@ const config = {
           "100%": {
             transform: "rotate(215deg) translateX(-100vw)",
             opacity: 0,
+          },
+        },
+        gradient: {
+          to: {
+            "background-position": "200% center",
           },
         },
       },
