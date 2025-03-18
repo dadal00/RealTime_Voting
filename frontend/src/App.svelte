@@ -32,6 +32,10 @@
   const gradients = {
     //Current Ordering 
     //start: Dark, end: Light
+    //red dark #be2047
+    //green dark #04773B
+    //blue dark #2081C3
+    //purple dark #8e04e0
     red: { start: '#be2047', end: '#FF7477' },
     green: { start: '#04773B', end: '#85f9a2' },
     blue: { start: '#2081C3', end: '#74d7ff' },
@@ -65,8 +69,8 @@
             data = Object.entries(message)
             .filter(([color]) => color !== "total")
             .map(([color, count]) => ({
-                color,
-                count
+                "color": color,
+                "count": count
             }))
 
             total_votes = message.total || total_votes;
@@ -100,7 +104,7 @@
       id,
       x: event.clientX - rect.left - 20 + (Math.random() * 6 - 3),
       y: event.clientY - rect.top - 20 + (Math.random() * 6 - 3),
-      color: gradients[color].start
+      color: color
     }];
   }
 
@@ -223,8 +227,8 @@
       data = Object.entries(counters)
         .filter(([color]) => color !== "total")
         .map(([color, count]) => ({
-          color,
-          count,
+          "color": color,
+          "count": count,
       }))
 
       total_votes = counters.total || total_votes;
@@ -251,7 +255,7 @@
     <Meteors number={30} />
     <div class="glass-container">
       <div class="total-votes">
-        Total Votes: <span class="total-number">{total_votes.toLocaleString()}</span>
+        <span class="total-number">{total_votes.toLocaleString()}</span> votes
       </div>
       <div class="connection-status" class:connected={connectionStatus === "connected"} class:disconnected={connectionStatus === "disconnected"} class:error={connectionStatus === "error"}>
         {connectionStatus}
@@ -272,18 +276,18 @@
             >
               <div
                 class={cn(
-                  `absolute inset-0 block h-full w-full animate-gradient bg-gradient-to-r bg-[length:var(--bg-size)_100%] p-[1px] [border-radius:inherit] [mask:linear-gradient(#fff_0_0)_content-box,linear-gradient(#fff_0_0)]`
+                  `absolute inset-0 block h-full w-full animate-gradient bg-gradient-to-r bg-[length:200%_100%] p-[1px] [border-radius:inherit] [mask:linear-gradient(#fff_0_0)_content-box,linear-gradient(#fff_0_0)]`
                 )}
                 style="background-image: linear-gradient(to right, 
-                  {gradients[color].start}, 
-                  {gradients[color].end}, 
-                  {gradients[color].start}
+                  {gradients[color]['start']}, 
+                  {gradients[color]['end']}, 
+                  {gradients[color]['start']}
                   );"
               ></div>
             </div>
             <button 
               class="[--bg-size:200%]"
-              style="color: {gradients[color]['end']};"
+              style="color: white;"
               on:click={(e) => 
               {
                 increment(color);
@@ -293,7 +297,7 @@
               {color}
             </button>
             {#each click_animations as animation (animation.id)}
-                {#if animation.color === gradients[color].start}
+                {#if animation.color === color}
                   <span
                     class="click-animation"
                     style="left: {animation.x}px; top: {animation.y}px; color: gold"
@@ -313,7 +317,7 @@
 <style>
   .total-votes {
     position: absolute;
-    bottom: 6rem;
+    top: 3rem;
     left: 50%;
     transform: translateX(-50%);
     font-size: 1.25rem;
