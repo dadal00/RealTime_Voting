@@ -17,12 +17,11 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-const (
-	port             = ":8080"
-	kafka_broker     = "localhost:9092"
-	counters_topic   = "counters-updates"
-	rust_service_url = "http://localhost:3000"
-)
+var kafka_brokers = "localhost:9092"
+var counters_topic = "counters-updates"
+var go_port = "8080"
+var rust_url = "http://localhost:3000"
+var svelte_url = "http://localhost:5173"
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:    1024,
@@ -30,7 +29,8 @@ var upgrader = websocket.Upgrader{
 	EnableCompression: true,
 	HandshakeTimeout:  500 * time.Millisecond,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins in development
+		origin := r.Header.Get("Origin")
+		return origin == svelte_url
 	},
 }
 
@@ -100,10 +100,26 @@ func (manager *Client_Manager) Broadcast(message []byte) {
 
 func main() {
 
+	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
+		kafka_brokers = brokers
+	}
+	if topic := os.Getenv("COUNTERS_TOPIC"); topic != "" {
+		counters_topic = topic
+	}
+	if port := os.Getenv("GO_PORT"); port != "" {
+		go_port = port
+	}
+	if url := os.Getenv("RUST_URL"); url != "" {
+		rust_url = url
+	}
+	if frontend_url := os.Getenv("SVELTE_URL"); frontend_url != "" {
+		svelte_url = frontend_url
+	}
+
 	router := gin.Default()
 
 	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Origin", svelte_url)
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	})
@@ -112,7 +128,7 @@ func main() {
 	go manager.Start()
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:     []string{kafka_broker},
+		Brokers:     []string{kafka_brokers},
 		Topic:       counters_topic,
 		GroupID:     "counter-service",
 		MinBytes:    1,
@@ -122,7 +138,7 @@ func main() {
 	})
 
 	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers: []string{kafka_broker},
+		Brokers: []string{kafka_brokers},
 		Topic:   counters_topic,
 	})
 
@@ -156,7 +172,7 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:    port,
+		Addr:    fmt.Sprintf(":%s", go_port),
 		Handler: router,
 	}
 
@@ -180,14 +196,21 @@ func main() {
 		}
 	}()
 
-	log.Printf("Server running on %s", port)
+	log.Printf("Server running on %s", go_port)
+	log.Printf("Environment variables:")
+	log.Printf("KAFKA_BROKERS: %s", kafka_brokers)
+	log.Printf("COUNTERS_TOPIC: %s", counters_topic)
+	log.Printf("GO_PORT: %s", go_port)
+	log.Printf("RUST_URL: %s", rust_url)
+	log.Printf("SVELTE_URL: %s", svelte_url)
+
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
 
 func increment_handler(c *gin.Context, color string) {
-	response, err := http.Post(fmt.Sprintf("%s/increment/%s", rust_service_url, color), "text/plain", nil)
+	response, err := http.Post(fmt.Sprintf("%s/increment/%s", rust_url, color), "text/plain", nil)
 	if err != nil {
 		log.Printf("Error forwarding increment request: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to increment counter"})
@@ -232,7 +255,7 @@ func websocket_handler(c *gin.Context, manager *Client_Manager) {
 
 func fetchCounters() ([]byte, error) {
 	client := &http.Client{Timeout: 2 * time.Second}
-	response, err := client.Get(fmt.Sprintf("%s/counters", rust_service_url))
+	response, err := client.Get(fmt.Sprintf("%s/counters", rust_url))
 	if err != nil {
 		return nil, err
 	}

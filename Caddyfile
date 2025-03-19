@@ -1,0 +1,11 @@
+{env.CADDY_DOMAIN} {
+    handle {
+        reverse_proxy {env.SVELTE_NAME}:{env.SVELTE_PORT}
+    }
+    
+    handle /ws/ {
+        reverse_proxy {env.GO_NAME}:{env.GO_PORT}
+    }
+
+    tls internal
+}

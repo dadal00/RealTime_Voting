@@ -42,7 +42,8 @@
     purple: { start: '#8e04e0', end: '#9175bd' }
   };
   const color_order = ["red", "green", "blue", "purple"]
-  const wsUrl = 'ws://localhost:8080/ws'
+  const websocket_url = import.meta.env.VITE_WS_URL
+  const go_url = import.meta.env.VITE_GO_URL
 
   $: chartWidth = width - margin.left - margin.right;
   $: chartHeight = height - margin.top - margin.bottom;
@@ -51,7 +52,7 @@
     WebSocket Functions
   */
   function connectWebSocket() {
-    socket = new WebSocket(wsUrl)
+    socket = new WebSocket(websocket_url)
     socket.binaryType = "arraybuffer"
     
     socket.onopen = () => {
@@ -113,7 +114,7 @@
   */
   async function increment(color) {
     try {
-      await fetch(`http://localhost:8080/increment/${color}`, { method: "POST" })
+      await fetch(`${go_url}/increment/${color}`, { method: "POST" })
     } catch (error) {
       console.error("Error - (Svelte)increment - Failed to Increment:", error)
     }
@@ -222,7 +223,7 @@
   onMount(async () => {
     try {
       chart_init()
-      const response = await fetch("http://localhost:8080/counters")
+      const response = await fetch(go_url + "/counters")
       const counters = await response.json()
       data = Object.entries(counters)
         .filter(([color]) => color !== "total")

@@ -1,0 +1,112 @@
+services:
+  rust:
+    image: counter_rust:latest
+    networks:
+      - counter_network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      # update_config:
+      #   parallelism: 1
+      #   delay: 10s
+    environment:
+      - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - COUNTERS_TOPIC=${COUNTERS_TOPIC}
+      - RUST_PORT=${RUST_PORT}
+      - GO_URL=http://${GO_NAME}:${GO_PORT}
+
+  go:
+    image: counter_go:latest
+    networks:
+      - counter_network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+    environment:
+      - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - COUNTERS_TOPIC=${COUNTERS_TOPIC}
+      - GO_PORT=${GO_PORT}
+      - RUST_URL=http://${RUST_NAME}:${RUST_PORT}
+      - SVELTE_URL=http://${SVELTE_NAME}:${SVELTE_PORT}
+
+  svelte:
+    image: counter_svelte:latest
+    networks:
+      - counter_network
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+    environment:
+      - VITE_WS_URL=wss://${CADDY_DOMAIN}/ws
+      - VITE_EXTERNAL_URL=https://${CADDY_DOMAIN}
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    networks:
+      - counter_network
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+    environment:
+      CLUSTER_ID: "vjF-NT_LTUShs1cHlBK85w"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "controller,broker"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENERS: "CONTROLLER://:9093,PLAINTEXT://:9092,EXTERNAL://:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://kafka:29092"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_REPLICATION_FACTOR: 1
+      KAFKA_LOG_FLUSH_INTERVAL_MESSAGES: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      ALLOW_PLAINTEXT_LISTENER: yes
+
+  caddy:
+    image: caddy:latest
+    networks:
+      - counter_network
+    ports:
+      - "80:80"
+      - "443:443"
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+    environment:
+      - CADDY_DOMAIN=${CADDY_DOMAIN}
+      - GO_NAME=${GO_NAME}
+      - GO_PORT=${GO_PORT}
+      - SVELTE_NAME=${SVELTE_NAME}
+      - SVELTE_PORT=${SVELTE_PORT}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - type: bind
+        source: Caddyfile
+        target: /etc/caddy/Caddyfile
+
+networks:
+  counter_network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+configs:
+  caddy_config:
+    file: Caddyfile

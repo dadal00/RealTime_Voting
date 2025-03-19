@@ -18,15 +18,23 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use lazy_static::lazy_static;
 
-const KAFKA_BROKERS: &str = "localhost:9092";
-const COUNTERS_TOPIC: &str = "counters-updates";
+lazy_static! {
+    static ref KAFKA_BROKERS: String = std::env::var("KAFKA_BROKERS")
+        .unwrap_or_else(|_| "localhost:9092".into());
+    static ref COUNTERS_TOPIC: String = std::env::var("COUNTERS_TOPIC")
+        .unwrap_or_else(|_| "counters-updates".into());
+    static ref RUST_PORT: String = std::env::var("RUST_PORT")
+        .unwrap_or_else(|_| "3000".into());
+    static ref GO_URL: String = std::env::var("GO_URL")
+        .unwrap_or_else(|_| "http://localhost:8080".into());
+}
 
 static RED_COUNTER: AtomicU64 = AtomicU64::new(0);
 static GREEN_COUNTER: AtomicU64 = AtomicU64::new(0);
 static BLUE_COUNTER: AtomicU64 = AtomicU64::new(0);
 static PURPLE_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 static TOTAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 static PRODUCER: std::sync::OnceLock<FutureProducer> = std::sync::OnceLock::new();
@@ -66,7 +74,7 @@ async fn increment_counter(color: &str) -> Result<u64, ()> {
         let counters = get_all_counters();
         let payload = serde_json::to_string(&counters).unwrap_or_default();
         
-        let record = FutureRecord::to(COUNTERS_TOPIC)
+        let record = FutureRecord::to(&COUNTERS_TOPIC)
             .key(color)
             .payload(&payload);
 
@@ -90,7 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     PRODUCER.get_or_init(|| {
         let mut config = ClientConfig::new();
         config
-            .set("bootstrap.servers", KAFKA_BROKERS)
+            .set("bootstrap.servers", &*KAFKA_BROKERS)
             .set("message.timeout.ms", "500")
             .set("linger.ms", "0") 
             .set("socket.timeout.ms", "1000")
@@ -105,13 +113,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/increment/:color", post(handle_increment))
         .route("/counters", get(handle_get_counters))
         .layer(CorsLayer::new() // the CORS customizations 
-            .allow_origin(Any)
+            .allow_origin([GO_URL.parse().unwrap()])
             .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
             .allow_headers(Any))
         .layer(TraceLayer::new_for_http());
 
-    let addr = "0.0.0.0:3000".parse()?; // the specific IP 
+    let addr = format!("0.0.0.0:{}", *RUST_PORT).parse()?;
     tracing::info!("Status - (Rust)Program running on {}", addr);
+
+    tracing::info!("Environment variables:");
+    tracing::info!("KAFKA_BROKERS: {}", *KAFKA_BROKERS);
+    tracing::info!("COUNTERS_TOPIC: {}", *COUNTERS_TOPIC);
+    tracing::info!("RUST_PORT: {}", *RUST_PORT);
+    tracing::info!("GO_URL: {}", *GO_URL);
     
     axum::Server::bind(&addr)
         .serve(app.into_make_service())

@@ -1,0 +1,37 @@
+services:
+  counter_rust:
+    build:
+      args:
+        - RUST_PORT
+      context: ./counter
+    image: counter_rust:latest
+    environment:
+      - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - COUNTERS_TOPIC=${COUNTERS_TOPIC}
+      - RUST_PORT=${RUST_PORT}
+      - GO_URL=http://${GO_NAME}:${GO_PORT}
+
+  counter_go:
+    build:
+      args:
+        - GO_PORT
+      context: ./backend
+    image: counter_go:latest
+    environment:
+      - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - COUNTERS_TOPIC=${COUNTERS_TOPIC}
+      - GO_PORT=${GO_PORT}
+      - RUST_URL=http://${RUST_NAME}:${RUST_PORT}
+      - SVELTE_URL=http://${SVELTE_NAME}:${SVELTE_PORT}
+  counter_svelte:
+    build:
+      args:
+        - VITE_SVELTE_PORT
+        - VITE_GO_URL
+        - VITE_WS_URL
+      context: ./frontend
+    image: counter_svelte:latest
+    environment:
+      - VITE_SVELTE_PORT=${SVELTE_PORT}
+      - VITE_GO_URL=http://${GO_NAME}:${GO_PORT}
+      - VITE_WS_URL=wss://${CADDY_DOMAIN}/ws
