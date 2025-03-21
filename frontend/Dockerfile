@@ -1,13 +1,10 @@
-# Stage 1: Build application
 FROM node:18 AS builder
 
 WORKDIR /app
 
-# Install build arguments
 ARG PUBLIC_GO_URL
 ARG PUBLIC_WS_URL
 
-# Set environment variables
 ENV PUBLIC_GO_URL=$PUBLIC_GO_URL
 ENV PUBLIC_WS_URL=$PUBLIC_WS_URL
 ENV NODE_ENV=production
@@ -15,13 +12,10 @@ ENV NODE_ENV=production
 COPY package*.json ./
 COPY svelte.config.js ./
 
-# Install dependencies (including dev dependencies for build)
-RUN npm ci
+RUN npm ci --omit=dev
 
-# Copy source code
 COPY . .
 
-# Build application
 RUN npm run build
 
 FROM node:18-alpine
