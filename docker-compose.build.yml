@@ -1,8 +1,4 @@
 services:
-  counter_rust:
-    build:
-      context: ./counter
-
   counter_go:
     build:
       context: ./backend

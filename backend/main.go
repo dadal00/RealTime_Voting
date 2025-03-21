@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -14,14 +14,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/segmentio/kafka-go"
 )
 
-var kafka_brokers = "localhost:9092"
-var counters_topic = "counters-updates"
 var go_port = "8080"
-var rust_url = "http://localhost:3000"
 var svelte_url = "http://localhost:5173"
+var manager *Client_Manager
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:    1024,
@@ -42,10 +39,19 @@ type Client_Manager struct {
 	mutex      sync.Mutex
 }
 
+var counters = struct {
+	sync.RWMutex
+	Red    int64
+	Green  int64
+	Blue   int64
+	Purple int64
+	Total  int64
+}{}
+
 func Create_Client_Manager() *Client_Manager {
 	return &Client_Manager{
 		clients:    make(map[*websocket.Conn]bool),
-		broadcast:  make(chan []byte, 10),
+		broadcast:  make(chan []byte, 1), //how many messages before broadcast goes
 		register:   make(chan *websocket.Conn),
 		unregister: make(chan *websocket.Conn),
 	}
@@ -83,11 +89,12 @@ func (manager *Client_Manager) Start() {
 		case message := <-manager.broadcast:
 			manager.mutex.Lock()
 			for connection := range manager.clients {
-				err := connection.WriteMessage(websocket.TextMessage, message)
-				if err != nil {
-					connection.Close()
-					delete(manager.clients, connection)
-				}
+				go func(client_connection *websocket.Conn) {
+					err := client_connection.WriteMessage(websocket.TextMessage, message)
+					if err != nil {
+						manager.unregister <- client_connection
+					}
+				}(connection)
 			}
 			manager.mutex.Unlock()
 		}
@@ -98,18 +105,8 @@ func (manager *Client_Manager) Broadcast(message []byte) {
 }
 
 func main() {
-
-	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
-		kafka_brokers = brokers
-	}
-	if topic := os.Getenv("COUNTERS_TOPIC"); topic != "" {
-		counters_topic = topic
-	}
 	if port := os.Getenv("GO_PORT"); port != "" {
 		go_port = port
-	}
-	if url := os.Getenv("RUST_URL"); url != "" {
-		rust_url = url
 	}
 	if frontend_url := os.Getenv("SVELTE_URL"); frontend_url != "" {
 		svelte_url = frontend_url
@@ -123,52 +120,11 @@ func main() {
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	})
 
-	manager := Create_Client_Manager()
+	manager = Create_Client_Manager()
 	go manager.Start()
 
-	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:     []string{kafka_brokers},
-		Topic:       counters_topic,
-		GroupID:     "counter-service",
-		MinBytes:    1,
-		MaxBytes:    1e6,
-		StartOffset: kafka.LastOffset,
-		MaxWait:     100 * time.Millisecond,
-	})
-
-	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers: []string{kafka_brokers},
-		Topic:   counters_topic,
-	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				message, err := reader.ReadMessage(ctx)
-				if err != nil {
-					log.Printf("Error reading from Kafka: %v", err)
-					continue
-				}
-
-				manager.Broadcast(message.Value)
-			}
-		}
-	}()
-
-	router.POST("/api/increment/:color", func(c *gin.Context) {
-		color := c.Param("color")
-		increment_handler(c, color)
-	})
-	router.GET("/api/counters", counters_handler)
-	router.GET("/api/ws", func(c *gin.Context) {
-		websocket_handler(c, manager)
-	})
+	router.POST("/api/increment/:color", increment_handler)
+	router.GET("/api/ws", websocket_handler)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", go_port),
@@ -181,13 +137,6 @@ func main() {
 		<-quit
 		log.Println("Shutting down server...")
 
-		if err := reader.Close(); err != nil {
-			log.Printf("Failed to close Kafka reader: %v", err)
-		}
-		if err := writer.Close(); err != nil {
-			log.Printf("Failed to close Kafka writer: %v", err)
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
@@ -197,10 +146,7 @@ func main() {
 
 	log.Printf("Server running on %s", go_port)
 	log.Printf("Environment variables:")
-	log.Printf("KAFKA_BROKERS: %s", kafka_brokers)
-	log.Printf("COUNTERS_TOPIC: %s", counters_topic)
 	log.Printf("GO_PORT: %s", go_port)
-	log.Printf("RUST_URL: %s", rust_url)
 	log.Printf("SVELTE_URL: %s", svelte_url)
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -208,44 +154,65 @@ func main() {
 	}
 }
 
-func increment_handler(c *gin.Context, color string) {
-	response, err := http.Post(fmt.Sprintf("%s/increment/%s", rust_url, color), "text/plain", nil)
+func increment_handler(c *gin.Context) {
+	color := c.Param("color")
+
+	counters.Lock()
+
+	switch color {
+	case "red":
+		counters.Red++
+	case "green":
+		counters.Green++
+	case "blue":
+		counters.Blue++
+	case "purple":
+		counters.Purple++
+	}
+	counters.Total++
+	response := map[string]interface{}{
+		"red":    counters.Red,
+		"green":  counters.Green,
+		"blue":   counters.Blue,
+		"purple": counters.Purple,
+		"total":  counters.Total,
+	}
+
+	counters.Unlock()
+
+	message, err := json.Marshal(response)
 	if err != nil {
 		log.Printf("Error forwarding increment request: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to increment counter"})
 		return
 	}
-	defer response.Body.Close()
 
+	manager.Broadcast(message)
 	c.Status(http.StatusOK)
 }
 
-func counters_handler(c *gin.Context) {
-	counters, err := fetchCounters()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch counters"})
-		return
-	}
-	c.Data(http.StatusOK, "application/json", counters)
-}
-
-func websocket_handler(c *gin.Context, manager *Client_Manager) {
+func websocket_handler(c *gin.Context) {
 	connection, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Println("Request Headers:")
-		for key, values := range c.Request.Header {
-			log.Printf("%s: %s\n", key, values)
-		}
-		log.Printf("Origin: %s", c.Request.Header.Get("Origin"))
 		log.Printf("Failed to upgrade connection: %v", err)
 		return
 	}
 
 	manager.register <- connection
 
-	initial_counters, err := fetchCounters()
+	counters.RLock()
+
+	response := map[string]interface{}{
+		"red":    counters.Red,
+		"green":  counters.Green,
+		"blue":   counters.Blue,
+		"purple": counters.Purple,
+	}
+
+	counters.RUnlock()
+	message, err := json.Marshal(response)
 	if err == nil {
-		connection.WriteMessage(websocket.TextMessage, initial_counters)
+		connection.WriteMessage(websocket.TextMessage, message)
 	}
 
 	for {
@@ -255,15 +222,4 @@ func websocket_handler(c *gin.Context, manager *Client_Manager) {
 			break
 		}
 	}
-}
-
-func fetchCounters() ([]byte, error) {
-	client := &http.Client{Timeout: 2 * time.Second}
-	response, err := client.Get(fmt.Sprintf("%s/counters", rust_url))
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-
-	return io.ReadAll(response.Body)
 }

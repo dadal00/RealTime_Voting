@@ -1,22 +1,4 @@
 services:
-  rust:
-    image: blue-counter_rust:latest
-    networks:
-      - counter_network
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-      # update_config:
-      #   parallelism: 1
-      #   delay: 10s
-    environment:
-      - KAFKA_BROKERS=${KAFKA_BROKERS}
-      - COUNTERS_TOPIC=${COUNTERS_TOPIC}
-      - RUST_PORT=${RUST_PORT}
-      - GO_URL=http://${GO_NAME}:${GO_PORT}
-
   go:
     image: blue-counter_go:latest
     networks:
@@ -42,32 +24,6 @@ services:
       restart_policy:
         condition: on-failure
         delay: 5s
-
-  kafka:
-    image: confluentinc/cp-kafka:7.4.0
-    networks:
-      - counter_network
-    deploy:
-      placement:
-        constraints: [node.role == manager]
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-    environment:
-      CLUSTER_ID: "vjF-NT_LTUShs1cHlBK85w"
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: "controller,broker"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_LISTENERS: "CONTROLLER://:9093,PLAINTEXT://:9092,EXTERNAL://:29092"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://kafka:29092"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_NUM_PARTITIONS: 1
-      KAFKA_REPLICATION_FACTOR: 1
-      KAFKA_LOG_FLUSH_INTERVAL_MESSAGES: 1
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      ALLOW_PLAINTEXT_LISTENER: yes
 
   caddy:
     image: caddy:latest

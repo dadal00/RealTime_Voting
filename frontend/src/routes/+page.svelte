@@ -87,7 +87,7 @@
                   "count": count
               }))
   
-              total_votes = message.total || total_votes;
+              total_votes = message.total;
               update_chart()
           }
         } catch (error) {
@@ -243,27 +243,9 @@
     onMount(async () => {
       try {
         chart_init()
-        console.log("HELELELELELE")
-        console.log(go_url)
-        console.log(websocket_url)
-        console.log("HELELELELELE")
-        const response = await fetch("/api/counters")
-        const counters = await response.json()
-        data = Object.entries(counters)
-          .filter(([color]) => color !== "total")
-          .map(([color, count]) => ({
-            "color": color,
-            "count": count,
-        }))
-  
-        total_votes = counters.total || total_votes;
-        update_chart()
         connectWebSocket()
+        update_chart()
       } catch (error) {
-        console.error("HELELELELELE")
-        console.error(go_url)
-        console.error(websocket_url)
-        console.error("HELELELELELE")
         console.error("Error - (Svelte)onMount - Failed to Fetch Counters:", error)
       }
     })
@@ -279,9 +261,7 @@
   </script>
   
   <main>
-    <div style="background-color: black; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; overflow: hidden;">
-      <Particles className="absolute inset-0 z-[-1]" refresh={true} quantity={1000}/>
-      <div class="glass-container">
+    <div style="background-color:grey; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; overflow: hidden;">
         <div class="total-votes">
           <span class="total-number">{total_votes.toLocaleString()}</span> votes
         </div>
@@ -298,8 +278,6 @@
           {#each color_order as color}
             <div class="button-wrapper">
               <button 
-                class="[--bg-size:200%]"
-                style="color: white;"
                 on:click={(e) => 
                 {
                   increment(color);
@@ -322,7 +300,6 @@
             </div>
           {/each}
         </div>
-      </div>
     </div>
   </main>
   
