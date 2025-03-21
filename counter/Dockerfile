@@ -15,8 +15,6 @@ COPY src/ src/
 
 RUN cargo build --release
 
-ARG RUST_PORT
-
 FROM debian:bookworm-slim
 
 RUN apt-get update && \
@@ -27,5 +25,4 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/counter /app/
-EXPOSE $RUST_PORT
 CMD ["/app/counter"]

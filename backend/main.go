@@ -93,7 +93,6 @@ func (manager *Client_Manager) Start() {
 		}
 	}
 }
-
 func (manager *Client_Manager) Broadcast(message []byte) {
 	manager.broadcast <- message
 }
@@ -162,12 +161,12 @@ func main() {
 		}
 	}()
 
-	router.POST("/increment/:color", func(c *gin.Context) {
+	router.POST("/api/increment/:color", func(c *gin.Context) {
 		color := c.Param("color")
 		increment_handler(c, color)
 	})
-	router.GET("/counters", counters_handler)
-	router.GET("/ws", func(c *gin.Context) {
+	router.GET("/api/counters", counters_handler)
+	router.GET("/api/ws", func(c *gin.Context) {
 		websocket_handler(c, manager)
 	})
 
@@ -233,6 +232,11 @@ func counters_handler(c *gin.Context) {
 func websocket_handler(c *gin.Context, manager *Client_Manager) {
 	connection, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		log.Println("Request Headers:")
+		for key, values := range c.Request.Header {
+			log.Printf("%s: %s\n", key, values)
+		}
+		log.Printf("Origin: %s", c.Request.Header.Get("Origin"))
 		log.Printf("Failed to upgrade connection: %v", err)
 		return
 	}

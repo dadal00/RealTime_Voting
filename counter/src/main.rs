@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(EnvFilter::new("info")) // the specific level of logging that can be changed
+        .with(EnvFilter::new("debug")) // the specific level of logging that can be changed
         .init();
     
     PRODUCER.get_or_init(|| {

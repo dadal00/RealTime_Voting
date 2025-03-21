@@ -1,6 +1,6 @@
 services:
   rust:
-    image: counter_rust:latest
+    image: blue-counter_rust:latest
     networks:
       - counter_network
     deploy:
@@ -18,7 +18,7 @@ services:
       - GO_URL=http://${GO_NAME}:${GO_PORT}
 
   go:
-    image: counter_go:latest
+    image: blue-counter_go:latest
     networks:
       - counter_network
     deploy:
@@ -31,10 +31,10 @@ services:
       - COUNTERS_TOPIC=${COUNTERS_TOPIC}
       - GO_PORT=${GO_PORT}
       - RUST_URL=http://${RUST_NAME}:${RUST_PORT}
-      - SVELTE_URL=http://${SVELTE_NAME}:${SVELTE_PORT}
+      - SVELTE_URL=https://${CADDY_DOMAIN}
 
   svelte:
-    image: counter_svelte:latest
+    image: blue-counter_svelte:latest
     networks:
       - counter_network
     deploy:
@@ -42,9 +42,6 @@ services:
       restart_policy:
         condition: on-failure
         delay: 5s
-    environment:
-      - VITE_WS_URL=wss://${CADDY_DOMAIN}/ws
-      - VITE_EXTERNAL_URL=https://${CADDY_DOMAIN}
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
