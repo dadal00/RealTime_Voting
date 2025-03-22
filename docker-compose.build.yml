@@ -2,9 +2,11 @@ services:
   counter_rust:
     build:
       context: ./backend
+    image: counter_rust:latest
   counter_svelte:
     build:
       args:
-        - PUBLIC_BACKEND_URL=https://${CADDY_DOMAIN}/api
-        - PUBLIC_WS_URL=wss://${CADDY_DOMAIN}/api/ws
+        - PUBLIC_BACKEND_URL=${PUBLIC_BACKEND_URL}
+        - PUBLIC_WS_URL=${PUBLIC_WS_URL}
       context: ./frontend
+    image: counter_svelte:latest

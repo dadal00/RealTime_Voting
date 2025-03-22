@@ -1,6 +1,6 @@
 services:
   rust:
-    image: blue-counter_rust:latest
+    image: counter_rust:latest
     networks:
       - counter_network
     deploy:
@@ -10,10 +10,10 @@ services:
         delay: 5s
     environment:
       - RUST_PORT=${RUST_PORT}
-      - SVELTE_URL=https://${CADDY_DOMAIN}
+      - SVELTE_URL=${SVELTE_URL}
 
   svelte:
-    image: blue-counter_svelte:latest
+    image: counter_svelte:latest
     networks:
       - counter_network
     deploy:

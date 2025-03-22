@@ -4,6 +4,7 @@
     */
     import { onDestroy, onMount } from "svelte"
     import * as d3 from 'd3'
+    import Particles from "$lib/Particles.svelte"
     import { PUBLIC_BACKEND_URL, PUBLIC_WS_URL } from '$env/static/public'
   
     /*
@@ -45,7 +46,9 @@
     };
     const color_order = ["red", "green", "blue", "purple"]
     const websocket_url = PUBLIC_WS_URL || "ws://localhost:8080/api/ws"
-    const go_url = PUBLIC_BACKEND_URL || "http://localhost:8080/api"
+    // const websocket_url = "ws://localhost:8080/api/ws"
+    // const rust_url = "http://localhost:8080/api"
+    const rust_url = PUBLIC_BACKEND_URL || "http://localhost:8080/api"
   
     $: chartWidth = width - margin.left - margin.right;
     $: chartHeight = height - margin.top - margin.bottom;
@@ -123,7 +126,7 @@
      */
     async function increment(color) {
       try {
-        await fetch(`${go_url}/increment/${color}`, { method: "POST" })
+        await fetch(`${rust_url}/increment/${color}`, { method: "POST" })
       } catch (error) {
         console.error("Error - (Svelte)increment - Failed to Increment:", error)
       }
@@ -250,7 +253,9 @@
   </script>
   
   <main>
-    <div style="background-color:grey; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; overflow: hidden;">
+    <div style="background-color:black; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; overflow: hidden;">
+      <Particles className="absolute inset-0 z-[-1]" refresh={true} quantity={1000}/>
+      <div class="glass-container"> 
         <div class="total-votes">
           <span class="total-number">{total_votes.toLocaleString()}</span> votes
         </div>
@@ -267,6 +272,8 @@
           {#each color_order as color}
             <div class="button-wrapper">
               <button 
+                class="[--bg-size:200%]"
+                style="color: white;"
                 on:click={(e) => 
                 {
                   increment(color);
@@ -289,6 +296,7 @@
             </div>
           {/each}
         </div>
+      </div>
     </div>
   </main>
   
@@ -327,6 +335,7 @@
     .user-count.connected {
       background-color: #4CAF50;
     }
+
     .connection-status {
       position: absolute;
       top: 10px;
@@ -372,6 +381,22 @@
         transform: translate(0px, -400px);
         opacity: 0;
       }
+    }
+
+    .glass-container {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: transparent;
+      /* backdrop-filter: blur(2px); */
+      /* border-radius: 20px; */
+      /* border: 1px solid rgba(255, 255, 255, 0.1); */
+      padding: 1rem;
+      /* box-shadow: 0 8px 32px 0 #1f26875e; */
+      width: 90%;
+      height: 90%;
+      overflow-y: auto;
     }
   
     .chart-container {
