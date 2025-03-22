@@ -1,6 +1,6 @@
 services:
-  go:
-    image: blue-counter_go:latest
+  rust:
+    image: blue-counter_rust:latest
     networks:
       - counter_network
     deploy:
@@ -9,10 +9,7 @@ services:
         condition: on-failure
         delay: 5s
     environment:
-      - KAFKA_BROKERS=${KAFKA_BROKERS}
-      - COUNTERS_TOPIC=${COUNTERS_TOPIC}
-      - GO_PORT=${GO_PORT}
-      - RUST_URL=http://${RUST_NAME}:${RUST_PORT}
+      - RUST_PORT=${RUST_PORT}
       - SVELTE_URL=https://${CADDY_DOMAIN}
 
   svelte:
@@ -40,8 +37,8 @@ services:
         delay: 5s
     environment:
       - CADDY_DOMAIN=${CADDY_DOMAIN}
-      - GO_NAME=${GO_NAME}
-      - GO_PORT=${GO_PORT}
+      - RUST_NAME=${RUST_NAME}
+      - RUST_PORT=${RUST_PORT}
       - SVELTE_NAME=${SVELTE_NAME}
       - SVELTE_PORT=${SVELTE_PORT}
     volumes:

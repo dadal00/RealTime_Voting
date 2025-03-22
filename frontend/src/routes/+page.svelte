@@ -4,7 +4,6 @@
     */
     import { onDestroy, onMount } from "svelte"
     import * as d3 from 'd3'
-    import Particles from "$lib/Particles.svelte"
     import { PUBLIC_GO_URL, PUBLIC_WS_URL } from '$env/static/public'
   
     /*
@@ -87,7 +86,7 @@
                   "count": count
               }))
   
-              total_votes = message.total;
+              total_votes = message.total || total_votes;
               update_chart()
           }
         } catch (error) {

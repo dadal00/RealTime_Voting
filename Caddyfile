@@ -1,12 +1,12 @@
 {$CADDY_DOMAIN} {
 	handle /api/ws {
-		reverse_proxy {$GO_NAME}:{$GO_PORT} {
+		reverse_proxy {$RUST_NAME}:{$RUST_PORT} {
 			header_up Connection upgrade
 		}
 	}
 
 	handle /api/* {
-		reverse_proxy {$GO_NAME}:{$GO_PORT}
+		reverse_proxy {$RUST_NAME}:{$RUST_PORT}
 	}
 
 	handle {

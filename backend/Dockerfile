@@ -1,10 +1,28 @@
-FROM golang:1.24 AS builder
-WORKDIR /app
-COPY go.mod go.sum ./
-COPY *.go ./
-RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -o /counter-go
+FROM rust:1.78-bookworm AS builder
 
-FROM alpine:latest
-COPY --from=builder /counter-go /app/
-CMD ["/app/counter-go"]
+RUN apt-get update && \
+    apt-get install -y \
+    cmake \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY src/ src/
+
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/backend /app/
+CMD ["/app/backend"]

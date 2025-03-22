@@ -1,5 +1,5 @@
 services:
-  counter_go:
+  counter_rust:
     build:
       context: ./backend
   counter_svelte:
