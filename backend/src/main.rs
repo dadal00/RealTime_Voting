@@ -113,10 +113,10 @@ async fn increment_handler(
 }
 
 async fn websocket_handler(
-    ws: WebSocketUpgrade,
+    websocket: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_websocket(socket, state))
+    websocket.on_upgrade(|socket| handle_websocket(socket, state))
 }
 
 async fn handle_websocket(socket: axum::extract::ws::WebSocket, state: Arc<AppState>) {
@@ -129,6 +129,7 @@ async fn handle_websocket(socket: axum::extract::ws::WebSocket, state: Arc<AppSt
         "green": counters.green,
         "blue": counters.blue,
         "purple": counters.purple,
+        "total": counters.total,
     });
     drop(counters);
 

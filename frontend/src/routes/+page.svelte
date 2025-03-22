@@ -4,7 +4,7 @@
     */
     import { onDestroy, onMount } from "svelte"
     import * as d3 from 'd3'
-    import { PUBLIC_GO_URL, PUBLIC_WS_URL } from '$env/static/public'
+    import { PUBLIC_BACKEND_URL, PUBLIC_WS_URL } from '$env/static/public'
   
     /*
       Non-constant Variables
@@ -18,8 +18,7 @@
      * @type {any[]}
      */
     let click_animations = []
-    let width = 900
-    let height = 600
+    let width = 900, height = 600
     let delay = 200
     let total_votes = 0;
     let concurrent_users = 0
@@ -39,12 +38,6 @@
       Constant Variables
     */
     const gradients = {
-      //Current Ordering 
-      //start: Dark, end: Light
-      //red dark #be2047
-      //green dark #04773B
-      //blue dark #2081C3
-      //purple dark #8e04e0
       red: { start: '#be2047', end: '#FF7477' },
       green: { start: '#04773B', end: '#85f9a2' },
       blue: { start: '#2081C3', end: '#74d7ff' },
@@ -52,10 +45,7 @@
     };
     const color_order = ["red", "green", "blue", "purple"]
     const websocket_url = PUBLIC_WS_URL || "ws://localhost:8080/api/ws"
-    const go_url = PUBLIC_GO_URL || "http://localhost:8080/api"
-
-    // const websocket_url = "ws://localhost:8080/api/ws"
-    // const go_url = "http://localhost:8080/api"
+    const go_url = PUBLIC_BACKEND_URL || "http://localhost:8080/api"
   
     $: chartWidth = width - margin.left - margin.right;
     $: chartHeight = height - margin.top - margin.bottom;
@@ -382,22 +372,6 @@
         transform: translate(0px, -400px);
         opacity: 0;
       }
-    }
-  
-    .glass-container {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: transparent;
-      backdrop-filter: blur(2px);
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 1rem;
-      box-shadow: 0 8px 32px 0 #1f26875e;
-      width: 90%;
-      height: 90%;
-      overflow-y: auto;
     }
   
     .chart-container {
