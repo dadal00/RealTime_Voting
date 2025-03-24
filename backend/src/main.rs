@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State, ws::WebSocketUpgrade},
+    extract::{ws::WebSocketUpgrade, Path, State},
     http::{HeaderValue, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -9,40 +9,106 @@ use serde_json::json;
 use std::{
     env,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicI64, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
 };
-use tokio::{
-    signal,
-    sync::{broadcast, Mutex},
-};
+use thiserror::Error;
+use tokio::{signal, sync::broadcast};
 use tower_http::cors::CorsLayer;
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::{fmt, EnvFilter};
+
+#[derive(Error, Debug)]
+enum AppError {
+    #[error("Environment error: {0}")]
+    Environment(#[from] std::env::VarError),
+
+    #[error("Network error: {0}")]
+    Network(#[from] std::io::Error),
+
+    #[error("Invalid header value: {0}")]
+    HeaderValue(#[from] axum::http::header::InvalidHeaderValue),
+
+    #[error("JSON serialization error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("Invalid color: {0}")]
+    InvalidColor(String),
+}
+
+type Result<T> = std::result::Result<T, AppError>;
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> axum::response::Response {
+        let (status, message) = match &self {
+            AppError::InvalidColor(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            _ => {
+                error!("Server error: {}", self);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            }
+        };
+
+        (status, message).into_response()
+    }
+}
 
 struct AppState {
-    counters: Mutex<Counters>,
+    counters: Counters,
     user_count: AtomicUsize,
     broadcast_tx: broadcast::Sender<String>,
 }
 
-#[derive(Default)]
 struct Counters {
-    red: i64,
-    green: i64,
-    blue: i64,
-    purple: i64,
-    total: i64,
+    red: AtomicI64,
+    green: AtomicI64,
+    blue: AtomicI64,
+    purple: AtomicI64,
+    total: AtomicI64,
+}
+
+impl Default for Counters {
+    fn default() -> Self {
+        Self {
+            red: AtomicI64::new(0),
+            green: AtomicI64::new(0),
+            blue: AtomicI64::new(0),
+            purple: AtomicI64::new(0),
+            total: AtomicI64::new(0),
+        }
+    }
 }
 
 #[tokio::main]
-async fn main() {
-    let rust_port = env::var("RUST_PORT").unwrap_or_else(|_| "8080".to_string());
-    let svelte_url = env::var("SVELTE_URL").unwrap_or_else(|_| "http://localhost:5173".to_string());
+async fn main() -> Result<()> {
+    fmt()
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("backend=info".parse().unwrap()), // backend (target) = info (logging level)
+        )
+        .init();
+
+    info!("Starting server...");
+
+    let rust_port = env::var("RUST_PORT")
+        .inspect_err(|_| {
+            info!("RUST_PORT not set, using default");
+        })
+        .unwrap_or_else(|_| "8080".to_string());
+    let svelte_url = env::var("SVELTE_URL")
+        .inspect_err(|_| {
+            info!("SVELTE_URL not set, using default");
+        })
+        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+
+    info!(port = %rust_port, frontend = %svelte_url, "Server configuration");
 
     let (broadcast_tx, _) = broadcast::channel(100);
     let state = Arc::new(AppState {
-        counters: Mutex::new(Counters::default()),
+        counters: Counters::default(),
         user_count: AtomicUsize::new(0),
         broadcast_tx,
     });
@@ -57,14 +123,25 @@ async fn main() {
                 "type": "users",
                 "count": count,
             });
-            if let Ok(json) = serde_json::to_string(&message) {
-                let _ = state_clone.broadcast_tx.send(json);
+            match serde_json::to_string(&message) {
+                Ok(json) => {
+                    if count > 0 {
+                        if let Err(e) = state_clone.broadcast_tx.send(json) {
+                            warn!("Failed to broadcast user count: {}", e);
+                        }
+                    }
+                }
+                Err(e) => error!("Failed to serialize user count message: {}", e),
             }
         }
     });
 
     let cors = CorsLayer::new()
-        .allow_origin(svelte_url.parse::<HeaderValue>().unwrap())
+        .allow_origin(
+            svelte_url
+                .parse::<HeaderValue>()
+                .map_err(AppError::HeaderValue)?,
+        )
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([axum::http::header::CONTENT_TYPE]);
 
@@ -75,41 +152,61 @@ async fn main() {
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", rust_port);
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    info!("Binding to {}", addr);
+
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(AppError::Network)?;
+    info!("Server running on {}", addr);
+
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .unwrap();
+        .map_err(|e| {
+            error!("Server error: {}", e);
+            AppError::Network(e)
+        })?;
+
+    info!("Server shutdown complete");
+    Ok(())
 }
 
 async fn increment_handler(
     Path(color): Path<String>,
     State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    let mut counters = state.counters.lock().await;
-    
+) -> Result<impl IntoResponse> {
+    info!(
+        "New Increment Request. Color: {}",
+        color.to_lowercase().as_str()
+    );
     match color.to_lowercase().as_str() {
-        "red" => counters.red += 1,
-        "green" => counters.green += 1,
-        "blue" => counters.blue += 1,
-        "purple" => counters.purple += 1,
-        _ => return (StatusCode::BAD_REQUEST, "Invalid color"),
+        "red" => state.counters.red.fetch_add(1, Ordering::SeqCst),
+        "green" => state.counters.green.fetch_add(1, Ordering::SeqCst),
+        "blue" => state.counters.blue.fetch_add(1, Ordering::SeqCst),
+        "purple" => state.counters.purple.fetch_add(1, Ordering::SeqCst),
+        _ => {
+            warn!("{} {}", color.to_lowercase(), "Invalid color provided");
+            return Err(AppError::InvalidColor(color));
+        }
     };
-    counters.total += 1;
+
+    state.counters.total.fetch_add(1, Ordering::SeqCst);
 
     let message = json!({
-        "red": counters.red,
-        "green": counters.green,
-        "blue": counters.blue,
-        "purple": counters.purple,
-        "total": counters.total,
+        "red": state.counters.red.load(Ordering::SeqCst),
+        "green": state.counters.green.load(Ordering::SeqCst),
+        "blue": state.counters.blue.load(Ordering::SeqCst),
+        "purple": state.counters.purple.load(Ordering::SeqCst),
+        "total": state.counters.total.load(Ordering::SeqCst),
     });
 
-    if let Ok(json) = serde_json::to_string(&message) {
-        let _ = state.broadcast_tx.send(json);
+    let json = serde_json::to_string(&message).map_err(AppError::Json)?;
+
+    if let Err(e) = state.broadcast_tx.send(json) {
+        warn!("Failed to broadcast counter update: {}", e);
     }
 
-    (StatusCode::OK, "OK")
+    Ok((StatusCode::OK, "OK"))
 }
 
 async fn websocket_handler(
@@ -120,43 +217,67 @@ async fn websocket_handler(
 }
 
 async fn handle_websocket(socket: axum::extract::ws::WebSocket, state: Arc<AppState>) {
-    state.user_count.fetch_add(1, Ordering::SeqCst);
+    let prev_count = state.user_count.fetch_add(1, Ordering::SeqCst);
+    info!("New WebSocket connection. User count: {}", prev_count + 1);
+
     let mut rx = state.broadcast_tx.subscribe();
 
-    let counters = state.counters.lock().await;
     let initial = json!({
-        "red": counters.red,
-        "green": counters.green,
-        "blue": counters.blue,
-        "purple": counters.purple,
-        "total": counters.total,
+        "red": state.counters.red.load(Ordering::SeqCst),
+        "green": state.counters.green.load(Ordering::SeqCst),
+        "blue": state.counters.blue.load(Ordering::SeqCst),
+        "purple": state.counters.purple.load(Ordering::SeqCst),
+        "total": state.counters.total.load(Ordering::SeqCst),
     });
-    drop(counters);
 
     let mut socket = socket;
-    if socket.send(axum::extract::ws::Message::Text(initial.to_string())).await.is_ok() {
-        loop {
-            tokio::select! {
-                msg = rx.recv() => {
-                    if let Ok(msg) = msg {
-                        if socket.send(axum::extract::ws::Message::Text(msg)).await.is_err() {
-                            break;
+    match serde_json::to_string(&initial) {
+        Ok(json) => {
+            if let Err(e) = socket.send(axum::extract::ws::Message::Text(json)).await {
+                error!("Failed to send initial state: {}", e);
+                state.user_count.fetch_sub(1, Ordering::SeqCst);
+                return;
+            }
+
+            loop {
+                tokio::select! {
+                    msg = rx.recv() => {
+                        match msg {
+                            Ok(msg) => {
+                                if let Err(e) = socket.send(axum::extract::ws::Message::Text(msg)).await {
+                                    debug!("Failed to send message: {}", e);
+                                    break;
+                                }
+                            },
+                            Err(e) => {
+                                debug!("Broadcast channel error: {}", e);
+                                break;
+                            }
                         }
-                    } else {
-                        break;
-                    }
-                },
-                result = socket.recv() => {
-                    match result {
-                        Some(Ok(_)) => {},
-                        _ => break,
+                    },
+                    result = socket.recv() => {
+                        match result {
+                            Some(Ok(_)) => {},
+                            Some(Err(e)) => {
+                                debug!("WebSocket error: {}", e);
+                                break;
+                            },
+                            None => {
+                                debug!("WebSocket closed by client");
+                                break;
+                            }
+                        }
                     }
                 }
             }
         }
+        Err(e) => {
+            error!("Failed to serialize initial state: {}", e);
+        }
     }
 
-    state.user_count.fetch_sub(1, Ordering::SeqCst);
+    let new_count = state.user_count.fetch_sub(1, Ordering::SeqCst) - 1;
+    info!("WebSocket connection closed. User count: {}", new_count);
 }
 
 async fn shutdown_signal() {
@@ -164,6 +285,7 @@ async fn shutdown_signal() {
         signal::ctrl_c()
             .await
             .expect("Failed to install Ctrl+C handler");
+        info!("Received Ctrl+C, shutting down");
     };
 
     #[cfg(unix)]
@@ -171,7 +293,8 @@ async fn shutdown_signal() {
         signal::unix::signal(signal::unix::SignalKind::terminate())
             .expect("Failed to install signal handler")
             .recv()
-            .await
+            .await;
+        info!("Received terminate signal, shutting down");
     };
 
     #[cfg(not(unix))]
