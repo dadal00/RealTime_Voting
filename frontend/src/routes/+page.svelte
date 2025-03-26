@@ -19,8 +19,8 @@
    * @type {any[]}
    */
   let click_animations = []
-  let width = 900,
-    height = 600
+  let width = 900
+  let height = 600
   let delay = 200
   let total_votes = 0
   let concurrent_users = 0
