@@ -1,28 +1,18 @@
-FROM rust:1.78-bookworm AS builder
+FROM rust:1-alpine3.19
 
-# RUN apt-get update && \
-#     apt-get install -y \
-#     cmake \
-#     build-essential \
-#     pkg-config \
-#     libssl-dev \
-#     zlib1g-dev \
-#     && rm -rf /var/lib/apt/lists/*
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+
+RUN apk add --no-cache musl-dev
 
 WORKDIR /app
-COPY Cargo.toml Cargo.lock ./
-COPY src/ src/
+COPY ./ /app
 
 RUN cargo build --release
+RUN strip target/release/backend
 
-FROM debian:bookworm-slim
+FROM alpine:3.19
 
-# RUN apt-get update && \
-#     apt-get install -y \
-#     ca-certificates \
-#     libssl3 \
-#     zlib1g \
-#     && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache libgcc
 
-COPY --from=builder /app/target/release/backend /app/
-CMD ["/app/backend"]
+COPY --from=0 /app/target/release/backend .
+CMD ["/backend"]

@@ -1,6 +1,4 @@
-FROM node:18 AS builder
-
-WORKDIR /app
+FROM node:20.12-alpine3.19 AS builder
 
 ARG PUBLIC_BACKEND_URL
 ARG PUBLIC_WS_URL
@@ -9,24 +7,27 @@ ENV PUBLIC_BACKEND_URL=$PUBLIC_BACKEND_URL
 ENV PUBLIC_WS_URL=$PUBLIC_WS_URL
 ENV NODE_ENV=production
 
-COPY package*.json ./
-COPY svelte.config.js ./
+WORKDIR /app
 
-RUN npm ci --omit=dev
+COPY package.json package-lock.json ./
+
+RUN npm ci
 
 COPY . .
 
 RUN npm run build
+RUN npm ci --prod
 
-FROM node:18-alpine
+FROM node:20.12-alpine3.19
+
+USER node:node
 
 WORKDIR /app
 
-COPY --from=builder /app/build ./build
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/build ./build
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --chown=node:node package.json .
 
 ENV NODE_ENV=production
-ENV PORT=5173
 
-CMD PROTOCOL_HEADER=x-forwarded-proto HOST_HEADER=x-forwarded-host node build/index.js
+CMD [ "node", "build" ]
