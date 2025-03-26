@@ -12,5 +12,5 @@ ToDo:
 - Frontend Changes
 - Security
 - Deployment
-- Docker Image Shrinking
+- Svelte Image Shrinking
 - Logs, Metrics, Traces (Opentelemetry)
