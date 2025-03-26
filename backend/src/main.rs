@@ -1,6 +1,6 @@
 use axum::{
     extract::{ws::WebSocketUpgrade, Path, State},
-    http::{HeaderMap, HeaderValue, Method, StatusCode},
+    http::{HeaderValue, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Router,
@@ -36,9 +36,6 @@ enum AppError {
 
     #[error("Invalid color: {0}")]
     InvalidColor(String),
-
-    #[error("Unauthorized request")]
-    Unauthorized,
 }
 
 type Result<T> = std::result::Result<T, AppError>;
@@ -47,7 +44,6 @@ impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match &self {
             AppError::InvalidColor(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             _ => {
                 error!("Server error: {}", self);
                 (
@@ -65,7 +61,6 @@ struct AppState {
     counters: Counters,
     user_count: AtomicUsize,
     broadcast_tx: broadcast::Sender<String>,
-    allowed_origin: String,
 }
 
 struct Counters {
@@ -116,7 +111,6 @@ async fn main() -> Result<()> {
         counters: Counters::default(),
         user_count: AtomicUsize::new(0),
         broadcast_tx,
-        allowed_origin: svelte_url,
     });
 
     let state_clone = state.clone();
@@ -143,12 +137,7 @@ async fn main() -> Result<()> {
     });
 
     let cors = CorsLayer::new()
-        .allow_origin(
-            state
-                .allowed_origin
-                .parse::<HeaderValue>()
-                .map_err(AppError::HeaderValue)?,
-        )
+        .allow_origin(svelte_url.parse::<HeaderValue>()?)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([axum::http::header::CONTENT_TYPE]);
 
@@ -161,9 +150,7 @@ async fn main() -> Result<()> {
     let addr = format!("0.0.0.0:{}", rust_port);
     info!("Binding to {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .map_err(AppError::Network)?;
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!("Server running on {}", addr);
 
     axum::serve(listener, app)
@@ -181,18 +168,7 @@ async fn main() -> Result<()> {
 async fn increment_handler(
     Path(color): Path<String>,
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Result<impl IntoResponse> {
-    if let Some(origin) = headers.get("origin") {
-        if *origin != *state.allowed_origin {
-            warn!("Unauthorized API request from origin: {:?}", origin);
-            return Err(AppError::Unauthorized);
-        }
-    } else {
-        warn!("Missing origin header");
-        return Err(AppError::Unauthorized);
-    }
-
+) -> impl IntoResponse {
     info!(
         "New Increment Request. Color: {}",
         color.to_lowercase().as_str()
@@ -218,7 +194,7 @@ async fn increment_handler(
         "total": state.counters.total.load(Ordering::SeqCst),
     });
 
-    let json = serde_json::to_string(&message).map_err(AppError::Json)?;
+    let json = serde_json::to_string(&message)?;
 
     if let Err(e) = state.broadcast_tx.send(json) {
         warn!("Failed to broadcast counter update: {}", e);
@@ -230,22 +206,8 @@ async fn increment_handler(
 async fn websocket_handler(
     websocket: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Result<impl IntoResponse> {
-    if let Some(origin) = headers.get("origin") {
-        if *origin != *state.allowed_origin {
-            warn!(
-                "Unauthorized WebSocket connection from origin: {:?}",
-                origin
-            );
-            Err(AppError::Unauthorized)
-        } else {
-            Ok(websocket.on_upgrade(|socket| handle_websocket(socket, state)))
-        }
-    } else {
-        warn!("Missing origin header");
-        Err(AppError::Unauthorized)
-    }
+) -> impl IntoResponse {
+    websocket.on_upgrade(|socket| handle_websocket(socket, state))
 }
 
 async fn handle_websocket(socket: axum::extract::ws::WebSocket, state: Arc<AppState>) {
