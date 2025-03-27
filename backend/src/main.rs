@@ -1,10 +1,16 @@
 use axum::{
     extract::{ws::WebSocketUpgrade, Path, State},
-    http::{HeaderValue, Method, StatusCode},
+    http::{HeaderName, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Router,
 };
+use opentelemetry::{
+    global,
+    sdk::{propagation::TraceContextPropagator, Resource},
+    KeyValue,
+};
+use opentelemetry_otlp::WithExportConfig;
 use serde_json::json;
 use std::{
     env,
@@ -16,9 +22,12 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{signal, sync::broadcast};
-use tower_http::cors::CorsLayer;
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    trace::TraceLayer,
+};
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter};
 
 #[derive(Error, Debug)]
 enum AppError {
@@ -36,12 +45,23 @@ enum AppError {
 
     #[error("Invalid color: {0}")]
     InvalidColor(String),
+
+    #[error("OpenTelemetry trace error: {0}")]
+    OpenTelemetryTrace(#[from] opentelemetry::trace::TraceError),
+
+    #[error("Tracing filter parse error: {0}")]
+    TracingFilterParse(#[from] tracing_subscriber::filter::ParseError),
+
+    #[error("Tracing subscriber error: {0}")]
+    TracingSubscriber(#[from] tracing::dispatcher::SetGlobalDefaultError),
 }
 
 type Result<T> = std::result::Result<T, AppError>;
 
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
+        let span = tracing::error_span!("app_error");
+        span.record("error", tracing::field::display(&self));
         let (status, message) = match &self {
             AppError::InvalidColor(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             _ => {
@@ -83,13 +103,50 @@ impl Default for Counters {
     }
 }
 
+async fn init_tracing() -> Result<()> {
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
+    let otel_endpoint = std::env::var("OTEL_ENDPOINT")
+        .inspect_err(|_| {
+            info!("OTEL_ENDPOINT not set, using default");
+        })
+        .unwrap_or_else(|_| "http://localhost:4317".to_string());
+
+    let otel_tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_trace_config(
+            opentelemetry::sdk::trace::config().with_resource(Resource::new(vec![KeyValue::new(
+                "service.name",
+                "counter_backend",
+            )])),
+        )
+        .with_exporter(
+            opentelemetry_otlp::new_exporter()
+                .tonic()
+                .with_endpoint(&otel_endpoint),
+        )
+        .install_batch(opentelemetry::runtime::Tokio)?;
+
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(otel_tracer);
+
+    let fmt_layer = fmt::layer();
+    let filter = EnvFilter::from_default_env();
+
+    let subscriber = tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(otel_layer);
+
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    info!(otel = %otel_endpoint, level = %EnvFilter::from_default_env() ,"Log configuration");
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env().add_directive("backend=info".parse().unwrap()), // backend (target) = info (logging level)
-        )
-        .init();
+    init_tracing().await?;
 
     info!("Starting server...");
 
@@ -137,13 +194,29 @@ async fn main() -> Result<()> {
     });
 
     let cors = CorsLayer::new()
-        .allow_origin(svelte_url.parse::<HeaderValue>()?)
+        .allow_origin(AllowOrigin::predicate(move |origin, _req| {
+            origin.as_bytes() == svelte_url.as_bytes()
+        }))
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers([axum::http::header::CONTENT_TYPE]);
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            HeaderName::from_static("traceparent"),
+        ])
+        .allow_credentials(true)
+        .max_age(Duration::from_secs(60 * 60));
 
     let app = Router::new()
         .route("/api/increment/:color", post(increment_handler))
         .route("/api/ws", get(websocket_handler))
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<_>| {
+                tracing::info_span!(
+                    "http_request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                )
+            }),
+        )
         .layer(cors)
         .with_state(state);
 
@@ -169,6 +242,12 @@ async fn increment_handler(
     Path(color): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    let span = tracing::info_span!(
+        "increment_counter",
+        color = %color,
+        user_count = state.user_count.load(Ordering::SeqCst)
+    );
+    let _guard = span.enter();
     info!(
         "New Increment Request. Color: {}",
         color.to_lowercase().as_str()
@@ -211,6 +290,9 @@ async fn websocket_handler(
 }
 
 async fn handle_websocket(socket: axum::extract::ws::WebSocket, state: Arc<AppState>) {
+    let span = tracing::info_span!("websocket_session");
+    let _guard = span.enter();
+
     let prev_count = state.user_count.fetch_add(1, Ordering::SeqCst);
     info!("New WebSocket connection. User count: {}", prev_count + 1);
 

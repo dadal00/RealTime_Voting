@@ -2,7 +2,8 @@ services:
   rust:
     image: counter_rust:latest
     networks:
-      - main_network
+      - main_net
+      - shared_net
     deploy:
       replicas: 1
       restart_policy:
@@ -17,7 +18,8 @@ services:
   svelte:
     image: counter_svelte:latest
     networks:
-      - main_network
+      - main_net
+      - shared_net
     deploy:
       mode: global
       restart_policy:
@@ -30,7 +32,7 @@ services:
   caddy:
     image: caddy:latest
     networks:
-      - main_network
+      - main_net
     ports:
       - "80:80"
       - "443:443"
@@ -54,14 +56,11 @@ services:
         target: /etc/caddy/Caddyfile
 
 networks:
-  main_network:
+  main_net:
     driver: overlay
-    attachable: true
-    internal: false
-  shared_network:
-    driver: overlay
-    attachable: true
-    internal: true
+  shared_net:
+    external: true
+    name: shared_net
 
 volumes:
   caddy_data:

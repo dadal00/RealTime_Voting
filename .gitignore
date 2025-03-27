@@ -1,1 +1,3 @@
 backend/target
+monitor/tempo-data/blocks
+monitor/tempo-data/wal
