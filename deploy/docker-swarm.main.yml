@@ -2,7 +2,7 @@ services:
   rust:
     image: counter_rust:latest
     networks:
-      - counter_network
+      - main_network
     deploy:
       replicas: 1
       restart_policy:
@@ -10,22 +10,27 @@ services:
         delay: 5s
     environment:
       - RUST_PORT=${RUST_PORT}
+      - RUST_LOG=${RUST_LOG}
       - SVELTE_URL=${SVELTE_URL}
+      - OTEL_ENDPOINT=${OTEL_ENDPOINT}
 
   svelte:
     image: counter_svelte:latest
     networks:
-      - counter_network
+      - main_network
     deploy:
       mode: global
       restart_policy:
         condition: on-failure
         delay: 5s
+    environment:
+      - PORT=${SVELTE_PORT}
+      - NODE_ENV=${NODE_ENV}
 
   caddy:
     image: caddy:latest
     networks:
-      - counter_network
+      - main_network
     ports:
       - "80:80"
       - "443:443"
@@ -49,9 +54,14 @@ services:
         target: /etc/caddy/Caddyfile
 
 networks:
-  counter_network:
+  main_network:
     driver: overlay
     attachable: true
+    internal: false
+  shared_network:
+    driver: overlay
+    attachable: true
+    internal: true
 
 volumes:
   caddy_data:
