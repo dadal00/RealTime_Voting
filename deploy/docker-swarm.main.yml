@@ -3,7 +3,7 @@ services:
     image: counter_rust:latest
     networks:
       - main_net
-      - shared_net
+      - monitor_net
     deploy:
       replicas: 1
       restart_policy:
@@ -13,13 +13,13 @@ services:
       - RUST_PORT=${RUST_PORT}
       - RUST_LOG=${RUST_LOG}
       - SVELTE_URL=${SVELTE_URL}
-      - OTEL_ENDPOINT=${OTEL_ENDPOINT}
+      - OTEL_GRPC_ENDPOINT=${OTEL_GRPC_ENDPOINT}
+      - OTEL_HTTP_ENDPOINT=${OTEL_HTTP_ENDPOINT}
 
   svelte:
     image: counter_svelte:latest
     networks:
       - main_net
-      - shared_net
     deploy:
       mode: global
       restart_policy:
@@ -58,9 +58,9 @@ services:
 networks:
   main_net:
     driver: overlay
-  shared_net:
+  monitor_net:
     external: true
-    name: shared_net
+    name: monitor_net
 
 volumes:
   caddy_data:

@@ -2,14 +2,18 @@
   /*
       Imports
     */
+  import '$lib/instrumentation.js'
   import { onDestroy, onMount } from 'svelte'
   import * as d3 from 'd3'
   import Particles from '$lib/Particles.svelte'
   import { PUBLIC_BACKEND_URL, PUBLIC_WS_URL } from '$env/static/public'
+  import opentelemetry from '@opentelemetry/api'
+
+  const tracer = opentelemetry.trace.getTracer('counter_frontend', '0.1.0')
 
   /*
-      Non-constant Variables
-    */
+    Non-constant Variables
+  */
   let margin = { top: 50, right: 0, bottom: 50, left: 25 }
   /**
    * @type {any[]}
@@ -58,46 +62,68 @@
       WebSocket Functions
     */
   function connectWebSocket() {
-    socket = new WebSocket(websocket_url)
-    socket.binaryType = 'arraybuffer'
+    return tracer.startActiveSpan('websocket.connect', (span) => {
+      span.setAttribute('websocket.url', websocket_url)
+      span.setAttribute('app.connection_status', connectionStatus)
+      socket = new WebSocket(websocket_url)
+      socket.binaryType = 'arraybuffer'
 
-    socket.onopen = () => {
-      console.log('WebSocket connection established')
-      connectionStatus = 'connected'
-    }
-
-    socket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data)
-
-        if (message.type === 'users') {
-          concurrent_users = message.count
-        } else {
-          data = Object.entries(message)
-            .filter(([color]) => color !== 'total')
-            .map(([color, count]) => ({
-              color: color,
-              count: count,
-            }))
-
-          total_votes = message.total || total_votes
-          update_chart()
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket data:', error)
+      socket.onopen = () => {
+        return tracer.startActiveSpan('websocket.open', (span) => {
+          console.log('WebSocket connection established')
+          connectionStatus = 'connected'
+          span.end()
+        })
       }
-    }
 
-    socket.onclose = () => {
-      console.log('WebSocket connection closed')
-      connectionStatus = 'disconnected'
-      setTimeout(connectWebSocket, 3000)
-    }
+      socket.onmessage = (event) => {
+        return tracer.startActiveSpan('websocket.message', (span) => {
+          try {
+            const message = JSON.parse(event.data)
 
-    socket.onerror = (error) => {
-      console.error('WebSocket error:', error)
-      connectionStatus = 'error'
-    }
+            if (message.type === 'users') {
+              concurrent_users = message.count
+            } else {
+              data = Object.entries(message)
+                .filter(([color]) => color !== 'total')
+                .map(([color, count]) => ({
+                  color: color,
+                  count: count,
+                }))
+
+              total_votes = message.total || total_votes
+              update_chart()
+            }
+          } catch (error) {
+            span.recordException(error)
+            console.error('Error parsing WebSocket data: ', error)
+          } finally {
+            span.end()
+          }
+        })
+      }
+
+      socket.onclose = () => {
+        return tracer.startActiveSpan('websocket.close', (span) => {
+          console.log('WebSocket connection closed')
+          connectionStatus = 'disconnected'
+          setTimeout(connectWebSocket, 3000)
+          span.end()
+        })
+      }
+
+      socket.onerror = (error) => {
+        return tracer.startActiveSpan('websocket.error', (span) => {
+          span.recordException(error)
+          span.setAttribute('error.type', error.constructor.name)
+          span.setAttribute('error.message', error.message)
+          console.error('WebSocket error:', error)
+          connectionStatus = 'error'
+          span.end()
+        })
+      }
+      span.end()
+    })
   }
 
   /*
@@ -129,11 +155,24 @@
    * @param {string} color
    */
   async function increment(color) {
-    try {
-      await fetch(`${rust_url}/increment/${color}`, { method: 'POST' })
-    } catch (error) {
-      console.error('Error - (Svelte)increment - Failed to Increment:', error)
-    }
+    return tracer.startActiveSpan('increment', async (span) => {
+      span.setAttribute('color', color)
+      span.setAttribute('total_votes_before', total_votes)
+      try {
+        const response = await fetch(`${rust_url}/increment/${color}`, { method: 'POST' })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+      } catch (error) {
+        span.recordException(error)
+        span.setAttribute('error.type', error.constructor.name)
+        span.setAttribute('error.message', error.message)
+        console.error('Failed to Increment:', error)
+      } finally {
+        span.end()
+      }
+    })
   }
 
   /*
@@ -245,7 +284,7 @@
       connectWebSocket()
       update_chart()
     } catch (error) {
-      console.error('Error - (Svelte)onMount - Failed to Fetch Counters:', error)
+      console.error('Failed to Fetch Counters: ', error)
     }
   })
 

@@ -2,7 +2,7 @@ FROM rust:1-alpine3.19
 
 ENV RUSTFLAGS="-C target-feature=-crt-static"
 
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev openssl-dev pkgconfig
 
 WORKDIR /app
 COPY ./ /app
