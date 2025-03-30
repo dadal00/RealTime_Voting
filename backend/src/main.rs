@@ -1,22 +1,10 @@
 use axum::{
-    body::{to_bytes, Body},
     extract::{ws::Message, ws::WebSocket, ws::WebSocketUpgrade, Path, State},
-    http::{
-        header::InvalidHeaderValue, header::CONTENT_TYPE, HeaderName, Method, Request, StatusCode,
-    },
+    http::{header::InvalidHeaderValue, header::CONTENT_TYPE, HeaderName, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
-use opentelemetry::{
-    global,
-    runtime::Tokio,
-    sdk::{propagation::TraceContextPropagator, trace::config, Resource},
-    trace::TraceError,
-    KeyValue,
-};
-use opentelemetry_otlp::{new_exporter, new_pipeline, WithExportConfig};
-use reqwest::Client;
 use serde_json::{json, Error as jsonError};
 use signal::{
     ctrl_c,
@@ -34,15 +22,9 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{net::TcpListener, signal, sync::broadcast, time::interval};
-use tower_http::{
-    cors::{AllowOrigin, CorsLayer},
-    trace::TraceLayer,
-};
-use tracing::{
-    debug, dispatcher::SetGlobalDefaultError, error, error_span, field::display, info, info_span,
-    subscriber::set_global_default, warn,
-};
-use tracing_subscriber::{filter::ParseError, fmt, layer::SubscriberExt, registry, EnvFilter};
+use tower_http::cors::{AllowOrigin, CorsLayer};
+use tracing::{debug, dispatcher::SetGlobalDefaultError, error, info, warn};
+use tracing_subscriber::{filter::ParseError, fmt, EnvFilter};
 
 #[derive(Error, Debug)]
 enum AppError {
@@ -61,9 +43,6 @@ enum AppError {
     #[error("Invalid color: {0}")]
     InvalidColor(String),
 
-    #[error("OpenTelemetry trace error: {0}")]
-    OpenTelemetryTrace(#[from] TraceError),
-
     #[error("Tracing filter parse error: {0}")]
     TracingFilterParse(#[from] ParseError),
 
@@ -75,8 +54,6 @@ type Result<T> = stdResult<T, AppError>;
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let span = error_span!("app_error");
-        span.record("error", display(&self));
         let (status, message) = match &self {
             AppError::InvalidColor(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             _ => {
@@ -118,41 +95,13 @@ impl Default for Counters {
     }
 }
 
-async fn init_tracing() -> Result<()> {
-    global::set_text_map_propagator(TraceContextPropagator::new());
-
-    let otel_endpoint = var("OTEL_GRPC_ENDPOINT")
-        .inspect_err(|_| {
-            info!("OTEL_GRPC_ENDPOINT not set, using default");
-        })
-        .unwrap_or_else(|_| "http://localhost:4317".to_string());
-
-    let otel_tracer = new_pipeline()
-        .tracing()
-        .with_trace_config(config().with_resource(Resource::new(vec![KeyValue::new(
-            "service.name",
-            "counter_backend",
-        )])))
-        .with_exporter(new_exporter().tonic().with_endpoint(&otel_endpoint))
-        .install_batch(Tokio)?;
-
-    let otel_layer = tracing_opentelemetry::layer().with_tracer(otel_tracer);
-
-    let fmt_layer = fmt::layer();
-    let filter = EnvFilter::from_default_env();
-
-    let subscriber = registry().with(filter).with(fmt_layer).with(otel_layer);
-
-    set_global_default(subscriber)?;
-
-    info!(otel_grpc = %otel_endpoint, level = %EnvFilter::from_default_env() ,"Log configuration");
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_tracing().await?;
+    fmt()
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("backend=info".parse().unwrap()), // backend (target) = info (logging level)
+        )
+        .init();
 
     info!("Starting server...");
 
@@ -211,16 +160,6 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/api/increment/:color", post(increment_handler))
         .route("/api/ws", get(websocket_handler))
-        .route("/api/otel/*path", post(otel_handler))
-        .layer(
-            TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
-                info_span!(
-                    "http_request",
-                    method = %request.method(),
-                    uri = %request.uri(),
-                )
-            }),
-        )
         .layer(cors)
         .with_state(state);
 
@@ -242,42 +181,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn otel_handler(Path(path): Path<String>, request: Request<Body>) -> StatusCode {
-    let _ = async {
-        let otel_collector =
-            var("OTEL_HTTP_ENDPOINT").unwrap_or_else(|_| "http://otel-collector:4318".to_string());
-
-        let target_url = format!("{}/{}", otel_collector, path);
-
-        let body = to_bytes(request.into_body(), usize::MAX).await?;
-
-        Client::new()
-            .post(&target_url)
-            .header("Content-Type", "application/x-protobuf")
-            .body(body)
-            .send()
-            .await?;
-
-        Ok::<(), Box<dyn std::error::Error>>(())
-    }
-    .await
-    .map_err(|e: Box<dyn std::error::Error>| {
-        error!("Failed to forward telemetry: {}", e);
-    });
-
-    StatusCode::OK
-}
-
 async fn increment_handler(
     Path(color): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let span = info_span!(
-        "increment_counter",
-        color = %color,
-        user_count = state.user_count.load(SeqCst)
-    );
-    let _guard = span.enter();
     info!(
         "New Increment Request. Color: {}",
         color.to_lowercase().as_str()
@@ -320,9 +227,6 @@ async fn websocket_handler(
 }
 
 async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
-    let span = info_span!("websocket_session");
-    let _guard = span.enter();
-
     let prev_count = state.user_count.fetch_add(1, SeqCst);
     info!("New WebSocket connection. User count: {}", prev_count + 1);
 

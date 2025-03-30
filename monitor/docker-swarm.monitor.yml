@@ -1,42 +1,28 @@
 services:
-  open_telemetry:
-    image: otel/opentelemetry-collector-contrib:0.102.0
-    networks:
-      - net
-    command: --config=/monitor/open_telemetry.config.yaml
-    volumes:
-      - ./open_telemetry.config.yaml:/monitor/open_telemetry.config.yaml
-    deploy:
-      mode: replicated
-      replicas: 1
-
-  tempo:
-    image: grafana/tempo:2.5.0
-    networks:
-      - net
-    command: -config.file=/monitor/tempo.config.yaml
-    volumes:
-      - ./tempo-data:/tmp/tempo
-      - ./tempo.config.yaml:/monitor/tempo.config.yaml
-    deploy:
-      mode: replicated
-      replicas: 1
-
   grafana:
     image: grafana/grafana:10.4.1
     networks:
       - net
     environment:
-      - GF_FEATURE_TOGGLES_ENABLE=tempoSearch,tempoServiceGraph
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     ports:
       - "3000:3000"
-    volumes:
-      - grafana-data:/var/lib/grafana
     deploy:
       mode: replicated
       replicas: 1
+    
+  loki:
+    image: grafana/loki:latest
+    networks:
+      - net
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_config:/config
+      - type: bind
+        source: loki_config.yml
+        target: /etc/loki/loki_config.yml
 
 networks:
   net:
@@ -45,5 +31,8 @@ networks:
     internal: true
 
 volumes:
-  tempo-data:
-  grafana-data:
+  loki_config:
+
+configs:
+  loki_config:
+    file: loki_config.yml

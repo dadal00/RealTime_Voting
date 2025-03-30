@@ -9,12 +9,18 @@ services:
       restart_policy:
         condition: on-failure
         delay: 5s
+    logging:
+      driver: loki
+      options:
+        mode: non-blocking
+        loki-url: ${LOKI_URL}
+        loki-batch-size: "10"
+        loki-timeout: "10s"
+        loki-retries: "3"
     environment:
       - RUST_PORT=${RUST_PORT}
       - RUST_LOG=${RUST_LOG}
       - SVELTE_URL=${SVELTE_URL}
-      - OTEL_GRPC_ENDPOINT=${OTEL_GRPC_ENDPOINT}
-      - OTEL_HTTP_ENDPOINT=${OTEL_HTTP_ENDPOINT}
 
   svelte:
     image: counter_svelte:latest
