@@ -1,10 +1,11 @@
 use axum::{
-    extract::{ws::Message, ws::WebSocket, ws::WebSocketUpgrade, Path, State},
+    extract::{ws::Message, ws::WebSocket, ws::WebSocketUpgrade, State},
     http::{header::InvalidHeaderValue, header::CONTENT_TYPE, HeaderName, Method, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
     Router,
 };
+use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Error as jsonError};
 use signal::{
     ctrl_c,
@@ -21,7 +22,7 @@ use std::{
     time::Duration,
 };
 use thiserror::Error;
-use tokio::{net::TcpListener, signal, sync::broadcast, time::interval};
+use tokio::{net::TcpListener, signal, sync::broadcast, sync::Mutex};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{debug, dispatcher::SetGlobalDefaultError, error, info, warn};
 use tracing_subscriber::{filter::ParseError, fmt, EnvFilter};
@@ -40,9 +41,6 @@ enum AppError {
     #[error("JSON serialization error: {0}")]
     Json(#[from] jsonError),
 
-    #[error("Invalid color: {0}")]
-    InvalidColor(String),
-
     #[error("Tracing filter parse error: {0}")]
     TracingFilterParse(#[from] ParseError),
 
@@ -54,15 +52,12 @@ type Result<T> = stdResult<T, AppError>;
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            AppError::InvalidColor(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            _ => {
-                error!("Server error: {}", self);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
-                )
-            }
+        let (status, message) = {
+            error!("Server error: {}", self);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
         };
 
         (status, message).into_response()
@@ -125,40 +120,16 @@ async fn main() -> Result<()> {
         broadcast_tx,
     });
 
-    let state_clone = state.clone();
-    tokio::spawn(async move {
-        let mut interval = interval(Duration::from_millis(500));
-        loop {
-            interval.tick().await;
-            let count = state_clone.user_count.load(SeqCst);
-            let message = json!({
-                "type": "users",
-                "count": count,
-            });
-            match serde_json::to_string(&message) {
-                Ok(json) => {
-                    if count > 0 {
-                        if let Err(e) = state_clone.broadcast_tx.send(json) {
-                            warn!("Failed to broadcast user count: {}", e);
-                        }
-                    }
-                }
-                Err(e) => error!("Failed to serialize user count message: {}", e),
-            }
-        }
-    });
-
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(move |origin, _req| {
             origin.as_bytes() == svelte_url.as_bytes()
         }))
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::OPTIONS])
         .allow_headers([CONTENT_TYPE, HeaderName::from_static("traceparent")])
         .allow_credentials(true)
         .max_age(Duration::from_secs(60 * 60));
 
     let app = Router::new()
-        .route("/api/increment/:color", post(increment_handler))
         .route("/api/ws", get(websocket_handler))
         .layer(cors)
         .with_state(state);
@@ -181,44 +152,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn increment_handler(
-    Path(color): Path<String>,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    info!(
-        "New Increment Request. Color: {}",
-        color.to_lowercase().as_str()
-    );
-    match color.to_lowercase().as_str() {
-        "red" => state.counters.red.fetch_add(1, SeqCst),
-        "green" => state.counters.green.fetch_add(1, SeqCst),
-        "blue" => state.counters.blue.fetch_add(1, SeqCst),
-        "purple" => state.counters.purple.fetch_add(1, SeqCst),
-        _ => {
-            warn!("{} {}", color.to_lowercase(), "Invalid color provided");
-            return Err(AppError::InvalidColor(color));
-        }
-    };
-
-    state.counters.total.fetch_add(1, SeqCst);
-
-    let message = json!({
-        "red": state.counters.red.load(SeqCst),
-        "green": state.counters.green.load(SeqCst),
-        "blue": state.counters.blue.load(SeqCst),
-        "purple": state.counters.purple.load(SeqCst),
-        "total": state.counters.total.load(SeqCst),
-    });
-
-    let json = serde_json::to_string(&message)?;
-
-    if let Err(e) = state.broadcast_tx.send(json) {
-        warn!("Failed to broadcast counter update: {}", e);
-    }
-
-    Ok((StatusCode::OK, "OK"))
-}
-
 async fn websocket_handler(
     websocket: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
@@ -231,6 +164,9 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
     info!("New WebSocket connection. User count: {}", prev_count + 1);
 
     let mut rx = state.broadcast_tx.subscribe();
+    let (ws_sender, mut ws_receiver) = socket.split();
+
+    let ws_sender = Arc::new(Mutex::new(ws_sender));
 
     let initial = json!({
         "red": state.counters.red.load(SeqCst),
@@ -240,50 +176,97 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
         "total": state.counters.total.load(SeqCst),
     });
 
-    let mut socket = socket;
     match serde_json::to_string(&initial) {
         Ok(json) => {
-            if let Err(e) = socket.send(Message::Text(json)).await {
+            let mut sender = ws_sender.lock().await;
+            if let Err(e) = sender.send(Message::Text(json)).await {
                 error!("Failed to send initial state: {}", e);
                 state.user_count.fetch_sub(1, SeqCst);
                 return;
             }
+        }
+        Err(e) => {
+            error!("Failed to serialize initial state: {}", e);
+            state.user_count.fetch_sub(1, SeqCst);
+            return;
+        }
+    }
 
-            loop {
-                tokio::select! {
-                    msg = rx.recv() => {
-                        match msg {
-                            Ok(msg) => {
-                                if let Err(e) = socket.send(Message::Text(msg)).await {
-                                    debug!("Failed to send message: {}", e);
-                                    break;
+    let handle_messages = {
+        let ws_sender = Arc::clone(&ws_sender);
+        let state_clone = state.clone();
+
+        async move {
+            while let Some(result) = ws_receiver.next().await {
+                match result {
+                    Ok(Message::Text(color)) => {
+                        let color = color.to_lowercase();
+                        info!("Received increment request for: {}", color);
+
+                        let counter = match color.as_str() {
+                            "red" => &state_clone.counters.red,
+                            "green" => &state_clone.counters.green,
+                            "blue" => &state_clone.counters.blue,
+                            "purple" => &state_clone.counters.purple,
+                            _ => {
+                                warn!("Invalid color received: {}", color);
+                                let mut sender = ws_sender.lock().await;
+                                if let Err(e) = sender
+                                    .send(Message::Text(format!("Invalid color: {}", color)))
+                                    .await
+                                {
+                                    error!("Error sending validation message: {}", e);
                                 }
-                            },
+                                continue;
+                            }
+                        };
+
+                        counter.fetch_add(1, SeqCst);
+                        state_clone.counters.total.fetch_add(1, SeqCst);
+
+                        let message = json!({
+                            "red": state_clone.counters.red.load(SeqCst),
+                            "green": state_clone.counters.green.load(SeqCst),
+                            "blue": state_clone.counters.blue.load(SeqCst),
+                            "purple": state_clone.counters.purple.load(SeqCst),
+                            "total": state_clone.counters.total.load(SeqCst),
+                        });
+
+                        match serde_json::to_string(&message) {
+                            Ok(json) => {
+                                if let Err(e) = state_clone.broadcast_tx.send(json) {
+                                    warn!("Failed to broadcast update: {}", e);
+                                }
+                            }
                             Err(e) => {
-                                debug!("Broadcast channel error: {}", e);
-                                break;
+                                error!("Failed to serialize update: {}", e);
                             }
                         }
-                    },
-                    result = socket.recv() => {
-                        match result {
-                            Some(Ok(_)) => {},
-                            Some(Err(e)) => {
-                                debug!("WebSocket error: {}", e);
-                                break;
-                            },
-                            None => {
-                                debug!("WebSocket closed by client");
-                                break;
-                            }
-                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        debug!("WebSocket receive error: {}", e);
+                        break;
                     }
                 }
             }
         }
-        Err(e) => {
-            error!("Failed to serialize initial state: {}", e);
+    };
+
+    let handle_broadcasts = async move {
+        let ws_sender = Arc::clone(&ws_sender);
+        while let Ok(msg) = rx.recv().await {
+            let mut sender = ws_sender.lock().await;
+            if let Err(e) = sender.send(Message::Text(msg)).await {
+                debug!("WebSocket send error: {}", e);
+                break;
+            }
         }
+    };
+
+    tokio::select! {
+        _ = handle_messages => {},
+        _ = handle_broadcasts => {},
     }
 
     let new_count = state.user_count.fetch_sub(1, SeqCst) - 1;
