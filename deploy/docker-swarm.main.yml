@@ -3,7 +3,6 @@ services:
     image: counter_rust:latest
     networks:
       - main_net
-      - monitor_net
     deploy:
       replicas: 1
       restart_policy:
