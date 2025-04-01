@@ -1,20 +1,23 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onMount, onDestroy } from 'svelte'
   import { websocket } from '$lib/stores/websocket'
   import BarChart from '$lib/components/BarChart.svelte'
   import VoteButton from '$lib/components/VoteButton.svelte'
   import TotalVotes from '$lib/components/TotalVotes.svelte'
+
+  onMount(() => {
+    websocket.connect()
+  })
+
+  onDestroy(() => {
+    websocket.disconnect()
+  })
 
   const chartData = $derived(
     Object.entries($websocket)
       .filter(([key]) => key !== 'total')
       .map(([color, count]) => ({ color, count }))
   )
-
-  onMount(() => {
-    websocket.connect()
-    return () => {}
-  })
 </script>
 
 <style>
@@ -30,10 +33,10 @@
   }
 
   .header-container {
-    height: 16.5vh; 
-    width: 100%;
-    background-color: #F5F0E6;
-    border-bottom: 1px solid rgb(188, 185, 178);
+    min-height: 4rem;
+    height: 12.5vh;
+    background-color: #f5f0e6;
+    border-top: 1px solid rgb(188, 185, 178);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -41,28 +44,23 @@
   }
 
   .body-container {
-    background-color: #FAF4EE;
+    background-color: #faf4ee;
     flex: 1;
   }
-
 </style>
 
 <main class="page-container">
-  <div class="header-container">
-    <!-- <VoteButton color="red" />
-    <VoteButton color="blue" />
-    <VoteButton color="green" />
-    <VoteButton color="purple" /> -->
-    <p>Hello</p>
-    <p>Hello</p>
-    <p>Hello</p>
-    <p>Hello</p>
-  </div>
   <div class="body-container">
     <p>Hello</p>
     <p>Hello</p>
     <!-- <TotalVotes large={true} /> -->
-    
+
     <!-- <BarChart data={chartData} /> -->
+  </div>
+  <div class="header-container">
+    <VoteButton color="red" />
+    <VoteButton color="blue" />
+    <VoteButton color="green" />
+    <VoteButton color="purple" />
   </div>
 </main>

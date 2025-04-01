@@ -1,6 +1,6 @@
 <script>
   import * as d3 from 'd3'
-  import { onMount } from 'svelte'
+  import { onMount, onDestroy } from 'svelte'
 
   const { data } = $props()
 
@@ -120,19 +120,16 @@
   onMount(() => {
     chart_init()
     update_chart()
-
-    return () => {
-      if (svg) {
-        svg.remove()
-        svg = null
-      }
-    }
   })
 
   $effect(() => {
     if (svg && filteredData) {
       update_chart()
     }
+  })
+
+  onDestroy(() => {
+    svg?.remove()
   })
 </script>
 

@@ -77,9 +77,17 @@ export const websocket = (() => {
     }
   }
 
+  const disconnect = () => {
+    if (socket) {
+      socket.close()
+    }
+  }
+
   return {
     subscribe,
+    set,
     connect,
     sendVote,
+    disconnect,
   }
 })()
