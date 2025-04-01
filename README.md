@@ -6,11 +6,15 @@ Features
 - Concurrent Users
 - Real Time Updates
 
-Built with Rust, Svelte, and Docker
+Built with Rust, Svelte, Docker, and Figma
+
+InProgress:
+- Frontend Refactoring + Visuals
+- Websocket Migration
 
 ToDo:
-- Frontend Changes
+- Frontend Render + Server Specs
+- Backend Refactoring
 - Security
 - Deployment
 - Svelte Image Shrinking
-- Logs, Metrics, Traces (Opentelemetry)
