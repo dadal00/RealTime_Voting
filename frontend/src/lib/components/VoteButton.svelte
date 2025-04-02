@@ -86,7 +86,7 @@
   .click-animation {
     position: absolute;
     font-weight: bold;
-    font-size: max(2.5vh, 1.5vw);
+    font-size: max(2.5vh, 1.5vw, 1rem);
     animation: fly-animation 2s linear;
     color: #5e5757;
     z-index: 3;

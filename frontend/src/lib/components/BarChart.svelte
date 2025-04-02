@@ -17,23 +17,17 @@
 
     const containerRect = container.getBoundingClientRect()
 
-    let factor
-
-    switch (true) {
-      case containerRect.height < 300:
-        factor = 0.7
-        outer_padding = 0.02
-        break
-      default:
-        factor = 0.83
-    }
+    let factor = containerRect.height < 300 ? 0.7 : 0.83
+    outer_padding = containerRect.height < 300 ? 0.02 : 0.01
 
     width = containerRect.width
     height = containerRect.height * 0.9075 * factor
 
     if (svg) {
-      svg?.remove()
-      chart_init()
+      svg
+        .attr('viewBox', [0, 0, width, height])
+        .attr('width', width)
+        .attr('height', height)
       update_chart()
     }
   }
@@ -82,23 +76,28 @@
       .paddingInner(0.35)
       .paddingOuter(outer_padding)
 
-    const bars = svg.selectAll('.bar').data(data, (d) => d.color)
+    const bars = svg
+      .selectAll('.bar')
+      .data(data, (d) => d.color)
 
-    bars.exit().transition().duration(delay).attr('width', 0).remove()
+    bars
+      .exit()
+      .transition()
+      .duration(delay)
+      .attr('width', 0)
+      .remove()
 
     const newBars = bars
       .enter()
       .append('g')
       .attr('class', 'bar')
       .attr('transform', (d) => `translate(0,${yScale(d.color)})`)
+      .attr('opacity', 0)
 
     newBars
       .append('rect')
       .attr('height', yScale.bandwidth())
       .attr('fill', (d) => `${colors[d.color]}`)
-      .transition()
-      .duration(delay)
-      .attr('width', (d) => Math.max(50, xScale(d.count)))
       .attr('stroke', '#5e5757')
       .attr('stroke-width', '2')
       .attr('rx', 11)
@@ -107,38 +106,34 @@
     newBars
       .append('text')
       .attr('class', 'value-label')
-      .attr('x', (d) => xScale(d.count) - 8)
-      .attr('y', -12)
-      .attr('dy', '0.35em')
       .style('font-size', 'max(3.4vh, 1.4vw, 1rem)')
       .style('font-family', 'Verdana, Geneva, sans-serif')
-      // .style('font-weight', '400')
       .style('fill', 'white')
       .style('text-anchor', 'end')
-      .attr('y', yScale.bandwidth() / 2)
-      .text((d) => format_number(d.count))
 
-    bars
+    const merged = newBars.merge(bars)
+
+    merged
       .transition()
       .duration(delay)
       .attr('transform', (d) => `translate(1,${yScale(d.color)})`)
+      .attr('opacity', 1)
 
-    bars
+    merged
       .select('rect')
       .transition()
       .duration(delay)
       .attr('width', (d) => Math.max(100, xScale(d.count)))
-      .attr('stroke', '#5e5757')
-      .attr('stroke-width', '2')
-      .attr('rx', 11)
-      .attr('ry', 11)
+      .attr('height', yScale.bandwidth())
 
-    bars
+    merged
       .select('.value-label')
       .transition()
       .duration(delay)
-      .attr('x', (d) => Math.max(100, xScale(d.count)) - 20)
-      .text((d) => format_number(d.count))
+      .attr('x', d => Math.max(100, xScale(d.count)) - 20)
+      .attr('y', yScale.bandwidth() / 2)
+      .attr('dy', '0.35em')
+      .text(d => format_number(d.count))
   }
 
   onMount(() => {
