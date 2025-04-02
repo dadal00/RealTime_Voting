@@ -9,13 +9,13 @@ Features
 Built with Rust, Svelte, Docker, and Figma
 
 InProgress:
-- 
-
-ToDo:
+- Backend Refactoring
 - DevOps
   - Loki Logging Config
   - Grafana Graphs, Dashboards, and Presets
-- Backend Refactoring + Saving State
+
+ToDo:
+- Backend Saving State
 - Frontend DockerFile + Optimizations
 - Svelte Image Shrinking
 - Security
