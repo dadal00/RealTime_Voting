@@ -28,22 +28,22 @@
     outer_padding = containerRect.height < 430 ? 0.02 : 0.01
     minBarWidth = (() => {
       switch (true) {
-        case containerRect.height < 420:
+        case containerRect.height < 450:
           switch (true) {
             case containerRect.width < 1200:
-              return 130
+              return 205
             default:
-              return 150
+              return 240
           }
         case containerRect.height < 550:
-          return 150
+          return 240
         case containerRect.height < 600:
-          return 180
+          return 260
         default:
-          return 200
+          return 300
       }
     })()
-
+    console.log(containerRect.height)
     width = containerRect.width
     height = containerRect.height * 0.9075 * factor
 
@@ -61,15 +61,17 @@
   }
 
   function format_number(num) {
-    if (num >= 1000000000) {
-      return (num / 1000000000).toFixed(1) + 'B'
-    } else if (num >= 1000000) {
-      return (num / 1000000).toFixed(1) + 'M'
-    } else if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'K'
+    if (num >= 1_000_000_000) {
+      return (num / 1_000_000_000).toFixed(1) + 'B';
+    } else if (num >= 1_000_000) {
+      return (num / 1_000_000).toFixed(1) + 'M';
+    } else if (num >= 1_000) {
+      return (num / 1_000).toFixed(1) + 'K';
     }
-    return num.toString()
+    return num.toString();
   }
+
+
 
   function chart_init() {
     svg = d3
