@@ -43,8 +43,8 @@
   .button-container {
     position: relative;
     width: 13.4vw;
-    max-width: 7.5rem;
-    max-height: 8.7vh;
+    max-width: 13.4vw;
+    max-height: 9vh;
     aspect-ratio: 2.3;
     display: flex;
     z-index: 0;
@@ -86,10 +86,11 @@
   .click-animation {
     position: absolute;
     font-weight: bold;
-    font-size: 1rem;
+    font-size: max(2.5vh, 1.5vw);
     animation: fly-animation 2s linear;
     color: #5e5757;
     z-index: 3;
+    user-select: none;
   }
 
   @keyframes fly-animation {

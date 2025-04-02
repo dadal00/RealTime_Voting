@@ -32,32 +32,34 @@
     width: 100vw;
   }
 
-  .header-container {
+  .footer-container {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    position: fixed;
     min-height: 4rem;
-    height: 12.5vh;
+    height: 17vh;
     background-color: #f5f0e6;
     border-top: 1px solid rgb(188, 185, 178);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 2.5rem;
+    gap: 6vw;
   }
 
   .body-container {
+    overflow: hidden;
     background-color: #faf4ee;
-    flex: 1;
+    height: 83vh;
   }
 </style>
 
 <main class="page-container">
   <div class="body-container">
-    <p>Hello</p>
-    <p>Hello</p>
-    <!-- <TotalVotes large={true} /> -->
-
-    <!-- <BarChart data={chartData} /> -->
+    <TotalVotes />
+    <BarChart data={chartData} />
   </div>
-  <div class="header-container">
+  <div class="footer-container">
     <VoteButton color="red" />
     <VoteButton color="blue" />
     <VoteButton color="green" />
