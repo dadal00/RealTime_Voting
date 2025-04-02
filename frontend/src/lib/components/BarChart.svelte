@@ -10,17 +10,30 @@
   let svg
   let container
   let resizeObserver
+  let outer_padding = 0.01
 
   function calculateDimensions() {
     if (!container) return
 
     const containerRect = container.getBoundingClientRect()
 
+    let factor
+
+    switch (true) {
+      case containerRect.height < 300:
+        factor = 0.7
+        outer_padding = 0.02
+        break
+      default:
+        factor = 0.83
+    }
+
     width = containerRect.width
-    height = containerRect.height * 0.9075 * 0.83
+    height = containerRect.height * 0.9075 * factor
 
     if (svg) {
-      svg.attr('viewBox', [0, 0, width, height])
+      svg?.remove()
+      chart_init()
       update_chart()
     }
   }
@@ -67,7 +80,7 @@
       .domain(data.map((d) => d.color))
       .range([0, height])
       .paddingInner(0.35)
-      .paddingOuter(0.01)
+      .paddingOuter(outer_padding)
 
     const bars = svg.selectAll('.bar').data(data, (d) => d.color)
 
@@ -86,6 +99,10 @@
       .transition()
       .duration(delay)
       .attr('width', (d) => Math.max(50, xScale(d.count)))
+      .attr('stroke', '#5e5757')
+      .attr('stroke-width', '2')
+      .attr('rx', 11)
+      .attr('ry', 11)
 
     newBars
       .append('text')
@@ -93,7 +110,7 @@
       .attr('x', (d) => xScale(d.count) - 8)
       .attr('y', -12)
       .attr('dy', '0.35em')
-      .style('font-size', 'max(3.5vh, 2.5vw)')
+      .style('font-size', 'max(3.4vh, 1.4vw, 1rem)')
       .style('font-family', 'Verdana, Geneva, sans-serif')
       // .style('font-weight', '400')
       .style('fill', 'white')

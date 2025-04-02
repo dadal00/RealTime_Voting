@@ -16,8 +16,8 @@
       ...animations,
       {
         id,
-        x: event.clientX - rect.left - 20 + (Math.random() * 6 - 3),
-        y: event.clientY - rect.top - 20 + (Math.random() * 6 - 3),
+        x: event.clientX - rect.left - 10 + (Math.random() * 6 - 3),
+        y: event.clientY - rect.top - 10 + (Math.random() * 6 - 3),
       },
     ]
   }
