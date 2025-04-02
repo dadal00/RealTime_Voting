@@ -43,11 +43,11 @@ export const websocket = (() => {
         }))
       }
     } catch (e) {
-      console.error('WebSocket parse error:', e)
+      console.error('Network parse error:', e)
     }
 
     socket.onopen = () => {
-      console.log('WS connected')
+      console.log('connected')
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
@@ -55,12 +55,12 @@ export const websocket = (() => {
     }
 
     socket.onclose = () => {
-      console.log('WS disconnected')
+      console.log('disconnected')
       attemptReconnect()
     }
 
     socket.onerror = (e) => {
-      console.error('WS error:', e)
+      console.error('connection error:', e)
       attemptReconnect()
     }
 
@@ -81,7 +81,7 @@ export const websocket = (() => {
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(color)
     } else {
-      console.error('Cannot send vote: WebSocket not connected')
+      console.error('Cannot send vote: not connected')
       connect()
     }
   }

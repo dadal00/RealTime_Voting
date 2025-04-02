@@ -1,6 +1,6 @@
 Real Time Voting System
 
-![Kapture 2025-03-18 at 16 12 51](https://github.com/user-attachments/assets/8436b200-f370-4ac4-9b18-9f4cab30d57f)
+![alt text](<Kapture 2025-04-02 at 16.00.57.gif>)
 
 Features
 - Concurrent Users
@@ -9,12 +9,14 @@ Features
 Built with Rust, Svelte, Docker, and Figma
 
 InProgress:
-- Frontend Refactoring + Visuals
-- Websocket Migration
+- 
 
 ToDo:
-- Frontend Render + Server Specs
-- Backend Refactoring
+- DevOps
+  - Loki Logging Config
+  - Grafana Graphs, Dashboards, and Presets
+- Backend Refactoring + Saving State
+- Frontend DockerFile + Optimizations
+- Svelte Image Shrinking
 - Security
 - Deployment
-- Svelte Image Shrinking
