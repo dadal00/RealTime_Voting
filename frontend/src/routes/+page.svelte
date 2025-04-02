@@ -30,6 +30,8 @@
     flex-direction: column;
     height: 100vh;
     width: 100vw;
+    background-color: #faf4ee;
+    position: fixed;
   }
 
   .footer-container {
