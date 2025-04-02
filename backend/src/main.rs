@@ -128,13 +128,14 @@ async fn main() -> Result<()> {
         loop {
             interval.tick().await;
             let count = state_clone.total_users.load(SeqCst);
+            let current_users = state_clone.concurrent_users.load(SeqCst);
             let message = json!({
                 "type": "users",
                 "count": count,
             });
             match serde_json::to_string(&message) {
                 Ok(json) => {
-                    if count > 0 {
+                    if current_users > 0 {
                         if let Err(e) = state_clone.broadcast_tx.send(json) {
                             warn!("Failed to broadcast total users: {}", e);
                         }
