@@ -4,6 +4,7 @@ import { PUBLIC_WS_URL } from '$env/static/public'
 export const websocket = (() => {
   const { subscribe, set, update } = writable({
     total: 0,
+    total_users: 0,
     red: 0,
     green: 0,
     blue: 0,
@@ -23,6 +24,14 @@ export const websocket = (() => {
 
       socket.onmessage = (event) => {
         const msg = JSON.parse(event.data)
+
+        if (msg.type === 'users') {
+          update((currentData) => ({
+            ...currentData,
+            ...(msg.count !== undefined && { total_users: msg.count }),
+          }))
+          return
+        }
 
         update((currentData) => ({
           ...currentData,
@@ -68,9 +77,9 @@ export const websocket = (() => {
     }, delay)
   }
 
-  const sendVote = (color: any) => {
+  const sendVote = (color: string) => {
     if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ color }))
+      socket.send(color)
     } else {
       console.error('Cannot send vote: WebSocket not connected')
       connect()

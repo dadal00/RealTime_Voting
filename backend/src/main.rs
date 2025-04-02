@@ -22,7 +22,7 @@ use std::{
     time::Duration,
 };
 use thiserror::Error;
-use tokio::{net::TcpListener, signal, sync::broadcast, sync::Mutex};
+use tokio::{net::TcpListener, signal, sync::broadcast, sync::Mutex, time::interval};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{debug, dispatcher::SetGlobalDefaultError, error, info, warn};
 use tracing_subscriber::{filter::ParseError, fmt, EnvFilter};
@@ -66,7 +66,8 @@ impl IntoResponse for AppError {
 
 struct AppState {
     counters: Counters,
-    user_count: AtomicUsize,
+    concurrent_users: AtomicUsize,
+    total_users: AtomicUsize,
     broadcast_tx: broadcast::Sender<String>,
 }
 
@@ -116,8 +117,32 @@ async fn main() -> Result<()> {
     let (broadcast_tx, _) = broadcast::channel(100);
     let state = Arc::new(AppState {
         counters: Counters::default(),
-        user_count: AtomicUsize::new(0),
+        concurrent_users: AtomicUsize::new(0),
+        total_users: AtomicUsize::new(0),
         broadcast_tx,
+    });
+
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        let mut interval = interval(Duration::from_millis(500));
+        loop {
+            interval.tick().await;
+            let count = state_clone.total_users.load(SeqCst);
+            let message = json!({
+                "type": "users",
+                "count": count,
+            });
+            match serde_json::to_string(&message) {
+                Ok(json) => {
+                    if count > 0 {
+                        if let Err(e) = state_clone.broadcast_tx.send(json) {
+                            warn!("Failed to broadcast total users: {}", e);
+                        }
+                    }
+                }
+                Err(e) => error!("Failed to serialize total users message: {}", e),
+            }
+        }
     });
 
     let cors = CorsLayer::new()
@@ -160,8 +185,9 @@ async fn websocket_handler(
 }
 
 async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
-    let prev_count = state.user_count.fetch_add(1, SeqCst);
-    info!("New WebSocket connection. User count: {}", prev_count + 1);
+    let prev_count = state.concurrent_users.fetch_add(1, SeqCst);
+    state.total_users.fetch_add(1, SeqCst);
+    debug!("New WebSocket connection. User count: {}", prev_count + 1);
 
     let mut rx = state.broadcast_tx.subscribe();
     let (ws_sender, mut ws_receiver) = socket.split();
@@ -181,13 +207,13 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
             let mut sender = ws_sender.lock().await;
             if let Err(e) = sender.send(Message::Text(json)).await {
                 error!("Failed to send initial state: {}", e);
-                state.user_count.fetch_sub(1, SeqCst);
+                state.concurrent_users.fetch_sub(1, SeqCst);
                 return;
             }
         }
         Err(e) => {
             error!("Failed to serialize initial state: {}", e);
-            state.user_count.fetch_sub(1, SeqCst);
+            state.concurrent_users.fetch_sub(1, SeqCst);
             return;
         }
     }
@@ -199,9 +225,18 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
         async move {
             while let Some(result) = ws_receiver.next().await {
                 match result {
-                    Ok(Message::Text(color)) => {
-                        let color = color.to_lowercase();
-                        info!("Received increment request for: {}", color);
+                    Ok(Message::Text(message)) => {
+                        let color = match serde_json::from_str::<serde_json::Value>(&message) {
+                            Ok(json) => {
+                                if let Some(color) = json.get("color").and_then(|v| v.as_str()) {
+                                    color.to_lowercase()
+                                } else {
+                                    message.to_lowercase()
+                                }
+                            }
+                            Err(_) => message.to_lowercase(),
+                        };
+                        debug!("Received increment request for: {}", color);
 
                         let counter = match color.as_str() {
                             "red" => &state_clone.counters.red,
@@ -269,8 +304,8 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
         _ = handle_broadcasts => {},
     }
 
-    let new_count = state.user_count.fetch_sub(1, SeqCst) - 1;
-    info!("WebSocket connection closed. User count: {}", new_count);
+    let new_count = state.concurrent_users.fetch_sub(1, SeqCst) - 1;
+    debug!("WebSocket connection closed. User count: {}", new_count);
 }
 
 async fn shutdown_signal() {

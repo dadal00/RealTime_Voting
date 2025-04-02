@@ -3,7 +3,14 @@
   import { websocket } from '$lib/stores/websocket'
   import BarChart from '$lib/components/BarChart.svelte'
   import VoteButton from '$lib/components/VoteButton.svelte'
-  import TotalVotes from '$lib/components/TotalVotes.svelte'
+  import TotalHeader from '$lib/components/TotalHeader.svelte'
+
+  const labels = {
+    red: 'Red 40',
+    blue: 'Ocean',
+    green: 'Grass',
+    purple: 'Grape',
+  }
 
   onMount(() => {
     websocket.connect()
@@ -12,12 +19,6 @@
   onDestroy(() => {
     websocket.disconnect()
   })
-
-  const chartData = $derived(
-    Object.entries($websocket)
-      .filter(([key]) => key !== 'total')
-      .map(([color, count]) => ({ color, count }))
-  )
 </script>
 
 <style>
@@ -58,13 +59,13 @@
 
 <main class="page-container">
   <div class="body-container">
-    <TotalVotes />
-    <BarChart data={chartData} />
+    <TotalHeader />
+    <BarChart {labels} />
   </div>
   <div class="footer-container">
-    <VoteButton color="red" />
-    <VoteButton color="blue" />
-    <VoteButton color="green" />
-    <VoteButton color="purple" />
+    <VoteButton color="red" text={labels['red']} />
+    <VoteButton color="blue" text={labels['blue']} />
+    <VoteButton color="green" text={labels['green']} />
+    <VoteButton color="purple" text={labels['purple']} />
   </div>
 </main>

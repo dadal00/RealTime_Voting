@@ -2,6 +2,7 @@
   import { websocket } from '$lib/stores/websocket'
 
   export let color
+  export let text
 
   let animations = []
   let container
@@ -68,6 +69,9 @@
     border: 2px solid #5e5757;
     border-radius: 11px;
     z-index: 2;
+    color: white;
+    font-family: 'Verdana', 'Geneva', 'sans-serif';
+    font-size: 1.5rem;
   }
 
   .button-container:hover button {
@@ -86,9 +90,14 @@
   .click-animation {
     position: absolute;
     font-weight: bold;
-    font-size: max(2.5vh, 1.5vw, 1rem);
+    font-size: max(2.3vh, 1.3vw, 0.8rem);
     animation: fly-animation 2s linear;
-    color: #5e5757;
+    color: white;
+    text-shadow:
+      1px 1px 0 #5e5757,
+      -1px -1px 0 #5e5757,
+      -1px 1px 0 #5e5757,
+      1px -1px 0 #5e5757;
     z-index: 3;
     user-select: none;
   }
@@ -107,6 +116,30 @@
       opacity: 0;
     }
   }
+
+  @media screen and (max-width: 1200px) {
+    button {
+      font-size: 1.25rem;
+    }
+  }
+
+  @media screen and (max-width: 950px) {
+    button {
+      font-size: 1rem;
+    }
+  }
+
+  @media screen and (max-width: 600px) {
+    button {
+      font-size: 0.8rem;
+    }
+  }
+
+  @media screen and (max-height: 530px) {
+    button {
+      font-size: 0.9rem;
+    }
+  }
 </style>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -119,7 +152,9 @@
   aria-label="{color} button"
 >
   <div class="button-background {color}-button"></div>
-  <button class="{color}-button" aria-label="{color} button"></button>
+  <button class="{color}-button" aria-label="{color} button">
+    {text}
+  </button>
 
   {#each animations as animation (animation.id)}
     <span
