@@ -3,6 +3,9 @@ services:
     image: grafana/grafana:10.4.1
     networks:
       - net
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
@@ -19,20 +22,29 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - loki_config:/config
-      - type: bind
-        source: loki_config.yml
-        target: /etc/loki/loki_config.yml
-
+      - ./loki_config.yml:/etc/loki/loki_config.yml
+      - ./loki_data:/loki_data
+    command: -config.file=/etc/loki/loki_config.yml
+  
+  prometheus:
+    image: prom/prometheus:latest
+    networks:
+      - net
+    volumes:
+      - ./prometheus_config.yml:/etc/prometheus/prometheus_config.yml
+      - ./prometheus_data:/prometheus_data
+    command:
+      - '--config.file=/etc/prometheus/prometheus_config.yml'
+      - '--storage.tsdb.retention.time=1y'
+      - '--storage.tsdb.path=/prometheus_data'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.wal-compression'
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+  
 networks:
   net:
     driver: overlay
     attachable: true
     internal: true
-
-volumes:
-  loki_config:
-
-configs:
-  loki_config:
-    file: loki_config.yml
