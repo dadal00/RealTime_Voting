@@ -1,4 +1,9 @@
-use crate::state::Counters;
+use crate::{
+    config::Config,
+    metrics::{metrics_handler, Metrics},
+    state::Counters,
+    websocket::websocket_handler,
+};
 use axum::{
     http::{header::CONTENT_TYPE, HeaderName, Method},
     routing::get,
@@ -19,15 +24,13 @@ use tokio::{net::TcpListener, sync::broadcast, time::interval};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
-use websocket::websocket_handler;
 
 mod config;
 mod error;
+mod metrics;
 mod signals;
 mod state;
 mod websocket;
-
-use config::Config;
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -47,6 +50,7 @@ async fn main() -> Result<(), AppError> {
 
     let (broadcast_tx, _) = broadcast::channel(100);
     let state = Arc::new(AppState {
+        metrics: Metrics::default(),
         counters: Counters::default(),
         concurrent_users: AtomicUsize::new(0),
         total_users: AtomicUsize::new(0),
@@ -88,6 +92,7 @@ async fn main() -> Result<(), AppError> {
 
     let app = Router::new()
         .route("/api/ws", get(websocket_handler))
+        .route("/metrics", get(metrics_handler))
         .layer(cors)
         .with_state(state);
 
@@ -99,11 +104,7 @@ async fn main() -> Result<(), AppError> {
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
-        .await
-        .map_err(|e| {
-            error!("Server error: {}", e);
-            AppError::Network(e)
-        })?;
+        .await?;
 
     info!("Server shutdown complete");
     Ok(())

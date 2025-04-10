@@ -2,8 +2,9 @@ use axum::{
     http::{header::InvalidHeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
+use prometheus::Error as prometheusError;
 use serde_json::Error as jsonError;
-use std::{env::VarError, io::Error as IOError};
+use std::{env::VarError, io::Error as IOError, string::FromUtf8Error};
 use thiserror::Error;
 use tracing::{dispatcher::SetGlobalDefaultError, error};
 use tracing_subscriber::filter::ParseError;
@@ -30,6 +31,12 @@ pub enum AppError {
 
     #[error("Configuration error: {0}")]
     Config(String),
+
+    #[error("Prometheus error: {0}")]
+    Prometheus(#[from] prometheusError),
+
+    #[error("UTF-8 conversion error: {0}")]
+    Utf8(#[from] FromUtf8Error),
 }
 
 impl IntoResponse for AppError {

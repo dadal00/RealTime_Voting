@@ -22,9 +22,14 @@ pub async fn websocket_handler(
 }
 
 async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
-    let prev_count = state.concurrent_users.fetch_add(1, SeqCst);
+    let user_count = state.concurrent_users.fetch_add(1, SeqCst) + 1;
+    state
+        .metrics
+        .concurrent_users
+        .set(user_count.try_into().unwrap());
     state.total_users.fetch_add(1, SeqCst);
-    debug!("New WebSocket connection. User count: {}", prev_count + 1);
+    state.metrics.total_users.inc();
+    debug!("New WebSocket connection. User count: {}", user_count);
 
     let mut rx = state.broadcast_tx.subscribe();
     let (ws_sender, mut ws_receiver) = socket.split();
@@ -44,13 +49,21 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
             let mut sender = ws_sender.lock().await;
             if let Err(e) = sender.send(Message::Text(json)).await {
                 error!("Failed to send initial state: {}", e);
-                state.concurrent_users.fetch_sub(1, SeqCst);
+                state.metrics.concurrent_users.set(
+                    (state.concurrent_users.fetch_sub(1, SeqCst) - 1)
+                        .try_into()
+                        .unwrap(),
+                );
                 return;
             }
         }
         Err(e) => {
             error!("Failed to serialize initial state: {}", e);
-            state.concurrent_users.fetch_sub(1, SeqCst);
+            state.metrics.concurrent_users.set(
+                (state.concurrent_users.fetch_sub(1, SeqCst) - 1)
+                    .try_into()
+                    .unwrap(),
+            );
             return;
         }
     }
@@ -75,11 +88,35 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
                         };
                         debug!("Received increment request for: {}", color);
 
-                        let counter = match color.as_str() {
-                            "red" => &state_clone.counters.red,
-                            "green" => &state_clone.counters.green,
-                            "blue" => &state_clone.counters.blue,
-                            "purple" => &state_clone.counters.purple,
+                        match color.as_str() {
+                            "red" => {
+                                state_clone
+                                    .metrics
+                                    .votes
+                                    .with_label_values(&["red"])
+                                    .set((state_clone.counters.red).fetch_add(1, SeqCst) + 1);
+                            }
+                            "green" => {
+                                state_clone
+                                    .metrics
+                                    .votes
+                                    .with_label_values(&["green"])
+                                    .set((state_clone.counters.green).fetch_add(1, SeqCst) + 1);
+                            }
+                            "blue" => {
+                                state_clone
+                                    .metrics
+                                    .votes
+                                    .with_label_values(&["blue"])
+                                    .set((state_clone.counters.blue).fetch_add(1, SeqCst) + 1);
+                            }
+                            "purple" => {
+                                state_clone
+                                    .metrics
+                                    .votes
+                                    .with_label_values(&["purple"])
+                                    .set((state_clone.counters.purple).fetch_add(1, SeqCst) + 1);
+                            }
                             _ => {
                                 warn!("Invalid color received: {}", color);
                                 let mut sender = ws_sender.lock().await;
@@ -93,7 +130,6 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
                             }
                         };
 
-                        counter.fetch_add(1, SeqCst);
                         state_clone.counters.total.fetch_add(1, SeqCst);
 
                         let message = json!({
@@ -142,5 +178,9 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
     }
 
     let new_count = state.concurrent_users.fetch_sub(1, SeqCst) - 1;
+    state
+        .metrics
+        .concurrent_users
+        .set(new_count.try_into().unwrap());
     debug!("WebSocket connection closed. User count: {}", new_count);
 }
