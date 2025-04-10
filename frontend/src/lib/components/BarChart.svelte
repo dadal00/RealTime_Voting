@@ -43,7 +43,6 @@
           return 300
       }
     })()
-    console.log(containerRect.height)
     width = containerRect.width
     height = containerRect.height * 0.9075 * factor
 
