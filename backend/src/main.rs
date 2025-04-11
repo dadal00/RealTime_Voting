@@ -36,7 +36,7 @@ mod websocket;
 async fn main() -> Result<(), AppError> {
     fmt()
         .with_env_filter(
-            EnvFilter::from_default_env().add_directive("backend=info".parse().unwrap()), // backend (target) = info (logging level)
+            EnvFilter::from_default_env(), // backend (target) = info (logging level)
         )
         .init();
 
