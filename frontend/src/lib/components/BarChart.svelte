@@ -2,6 +2,7 @@
   import * as d3 from 'd3'
   import { onMount, onDestroy } from 'svelte'
   import { websocket } from '$lib/stores/websocket'
+  import VisibilityChange from "svelte-visibility-change"
 
   const { labels } = $props()
   const data = $derived(
@@ -18,6 +19,7 @@
   let resizeObserver
   let outer_padding = 0.01
   let minBarWidth = 200
+  let visible = true
 
   function calculateDimensions() {
     if (!container) return
@@ -82,7 +84,7 @@
   }
 
   function update_chart() {
-    if (!svg) return
+    if (!svg || !visible) return
 
     data.sort((a, b) => b.count - a.count)
 
@@ -212,6 +214,10 @@
   }
 </style>
 
+<VisibilityChange
+  on:visible={() => (visible=true)}
+  on:hidden={() => (visible=false)}
+/>
 <div class="chart-container" bind:this={container}>
   <div id="chart"></div>
 </div>
