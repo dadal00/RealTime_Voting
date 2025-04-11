@@ -76,19 +76,9 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
             while let Some(result) = ws_receiver.next().await {
                 match result {
                     Ok(Message::Text(message)) => {
-                        let color = match serde_json::from_str::<serde_json::Value>(&message) {
-                            Ok(json) => {
-                                if let Some(color) = json.get("color").and_then(|v| v.as_str()) {
-                                    color.to_lowercase()
-                                } else {
-                                    message.to_lowercase()
-                                }
-                            }
-                            Err(_) => message.to_lowercase(),
-                        };
-                        debug!("Received increment request for: {}", color);
+                        debug!("Received payload for: {}", message);
 
-                        match color.as_str() {
+                        match message.as_str() {
                             "red" => {
                                 state_clone
                                     .metrics
@@ -118,10 +108,10 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
                                     .set((state_clone.counters.purple).fetch_add(1, SeqCst) + 1);
                             }
                             _ => {
-                                warn!("Invalid color received: {}", color);
+                                warn!("Invalid color received: {}", message);
                                 let mut sender = ws_sender.lock().await;
                                 if let Err(e) = sender
-                                    .send(Message::Text(format!("Invalid color: {}", color)))
+                                    .send(Message::Text(format!("Invalid color: {}", message)))
                                     .await
                                 {
                                     error!("Error sending validation message: {}", e);

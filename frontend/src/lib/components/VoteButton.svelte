@@ -8,7 +8,7 @@
   let container
 
   const handleClick = (event) => {
-    websocket.sendVote(color)
+    websocket.sendPayload(color)
 
     const rect = container.getBoundingClientRect()
     const id = Date.now()

@@ -77,12 +77,12 @@ export const websocket = (() => {
     }, delay)
   }
 
-  const sendVote = (color: string) => {
+  const sendPayload = (payload: string) => {
     if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(color)
+      socket.send("" + payload)
     } else {
       console.error('Cannot send vote: not connected')
-      connect()
+      attemptReconnect()
     }
   }
 
@@ -96,7 +96,7 @@ export const websocket = (() => {
     subscribe,
     set,
     connect,
-    sendVote,
+    sendPayload,
     disconnect,
   }
 })()
