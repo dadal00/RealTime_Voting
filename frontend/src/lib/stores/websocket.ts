@@ -1,5 +1,7 @@
-import { writable } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import { PUBLIC_WS_URL } from '$env/static/public'
+
+const MSG_KEYS = new Set(['red', 'green', 'blue', 'purple', 'total'])
 
 export const websocket = (() => {
   const { subscribe, set, update } = writable({
@@ -25,22 +27,32 @@ export const websocket = (() => {
       socket.onmessage = (event) => {
         const msg = JSON.parse(event.data)
 
-        if (msg.type === 'users') {
+        if (msg.type == undefined) {
+          update((currentData) => ({
+            ...currentData,
+            ...Object.entries(msg).reduce((acc, [key, value]) => {
+              if (MSG_KEYS.has(key)) {
+                acc[key] = value
+              }
+              return acc
+            }, {}),
+          }))
+        } else if (msg.type === 'initial') {
+          update((currentData) => ({
+            ...currentData,
+            ...(msg.count !== undefined && { total_users: msg.count }),
+            ...(msg.total !== undefined && { total: msg.total }),
+            ...(msg.red !== undefined && { red: msg.red }),
+            ...(msg.green !== undefined && { green: msg.green }),
+            ...(msg.blue !== undefined && { blue: msg.blue }),
+            ...(msg.purple !== undefined && { purple: msg.purple }),
+          }))
+        } else if (msg.type === 'users') {
           update((currentData) => ({
             ...currentData,
             ...(msg.count !== undefined && { total_users: msg.count }),
           }))
-          return
         }
-
-        update((currentData) => ({
-          ...currentData,
-          ...(msg.total !== undefined && { total: msg.total }),
-          ...(msg.red !== undefined && { red: msg.red }),
-          ...(msg.green !== undefined && { green: msg.green }),
-          ...(msg.blue !== undefined && { blue: msg.blue }),
-          ...(msg.purple !== undefined && { purple: msg.purple }),
-        }))
       }
     } catch (e) {
       console.error('Network parse error:', e)
@@ -69,7 +81,7 @@ export const websocket = (() => {
 
   const attemptReconnect = () => {
     if (reconnectTimer) return
-
+    console.log('reconnecting...')
     const delay = Math.min(Math.random() * 3000, MAX_RECONNECT_DELAY)
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
@@ -79,7 +91,7 @@ export const websocket = (() => {
 
   const sendPayload = (payload: string) => {
     if (socket?.readyState === WebSocket.OPEN) {
-      socket.send("" + payload)
+      socket.send('' + payload)
     } else {
       console.error('Cannot send vote: not connected')
       attemptReconnect()

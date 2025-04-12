@@ -10,19 +10,15 @@ use axum::{
     Router,
 };
 use error::AppError;
-use serde_json::json;
 use signals::shutdown_signal;
 use state::AppState;
 use std::{
-    sync::{
-        atomic::{AtomicUsize, Ordering::SeqCst},
-        Arc,
-    },
+    sync::{atomic::AtomicUsize, Arc},
     time::Duration,
 };
-use tokio::{net::TcpListener, sync::broadcast, time::interval};
+use tokio::{net::TcpListener, sync::broadcast};
 use tower_http::cors::{AllowOrigin, CorsLayer};
-use tracing::{error, info, warn};
+use tracing::info;
 use tracing_subscriber::{fmt, EnvFilter};
 
 mod config;
@@ -57,29 +53,29 @@ async fn main() -> Result<(), AppError> {
         broadcast_tx,
     });
 
-    let state_clone = state.clone();
-    tokio::spawn(async move {
-        let mut interval = interval(Duration::from_millis(500));
-        loop {
-            interval.tick().await;
-            let count = state_clone.total_users.load(SeqCst);
-            let current_users = state_clone.concurrent_users.load(SeqCst);
-            let message = json!({
-                "type": "users",
-                "count": count,
-            });
-            match serde_json::to_string(&message) {
-                Ok(json) => {
-                    if current_users > 0 {
-                        if let Err(e) = state_clone.broadcast_tx.send(json) {
-                            warn!("Failed to broadcast total users: {}", e);
-                        }
-                    }
-                }
-                Err(e) => error!("Failed to serialize total users message: {}", e),
-            }
-        }
-    });
+    // let state_clone = state.clone();
+    // tokio::spawn(async move {
+    //     let mut interval = interval(Duration::from_millis(500));
+    //     loop {
+    //         interval.tick().await;
+    //         let count = state_clone.total_users.load(SeqCst);
+    //         let current_users = state_clone.concurrent_users.load(SeqCst);
+    //         let message = json!({
+    //             "type": "users",
+    //             "count": count,
+    //         });
+    //         match serde_json::to_string(&message) {
+    //             Ok(json) => {
+    //                 if current_users > 0 {
+    //                     if let Err(e) = state_clone.broadcast_tx.send(json) {
+    //                         warn!("Failed to broadcast total users: {}", e);
+    //                     }
+    //                 }
+    //             }
+    //             Err(e) => error!("Failed to serialize total users message: {}", e),
+    //         }
+    //     }
+    // });
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(move |origin, _req| {
