@@ -2,7 +2,7 @@
   import * as d3 from 'd3'
   import { onMount, onDestroy } from 'svelte'
   import { websocket } from '$lib/stores/websocket'
-  import VisibilityChange from "svelte-visibility-change"
+  import VisibilityChange from 'svelte-visibility-change'
 
   const { labels } = $props()
   const data = $derived(
@@ -19,7 +19,7 @@
   let resizeObserver
   let outer_padding = 0.01
   let minBarWidth = 200
-  let visible = true
+  let visible = $state(true)
 
   function calculateDimensions() {
     if (!container) return
@@ -63,16 +63,14 @@
 
   function format_number(num) {
     if (num >= 1_000_000_000) {
-      return (num / 1_000_000_000).toFixed(1) + 'B';
+      return (num / 1_000_000_000).toFixed(1) + 'B'
     } else if (num >= 1_000_000) {
-      return (num / 1_000_000).toFixed(1) + 'M';
+      return (num / 1_000_000).toFixed(1) + 'M'
     } else if (num >= 1_000) {
-      return (num / 1_000).toFixed(1) + 'K';
+      return (num / 1_000).toFixed(1) + 'K'
     }
-    return num.toString();
+    return num.toString()
   }
-
-
 
   function chart_init() {
     svg = d3
@@ -190,7 +188,7 @@
   })
 
   $effect(() => {
-    if (svg && data) {
+    if (visible && svg && data) {
       update_chart()
     }
   })
@@ -214,10 +212,7 @@
   }
 </style>
 
-<VisibilityChange
-  on:visible={() => (visible=true)}
-  on:hidden={() => (visible=false)}
-/>
+<VisibilityChange on:visible={() => (visible = true)} on:hidden={() => (visible = false)} />
 <div class="chart-container" bind:this={container}>
   <div id="chart"></div>
 </div>
