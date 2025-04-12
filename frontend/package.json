@@ -28,5 +28,8 @@
     "@sveltejs/adapter-node": "^5.2.12",
     "d3": "^7.9.0",
     "svelte-visibility-change": "^0.7.0"
+  },
+  "overrides": {
+    "cookie": "0.7.0"
   }
 }
