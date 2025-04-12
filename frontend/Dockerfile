@@ -1,4 +1,4 @@
-FROM node:20.12-alpine3.19 AS builder
+FROM node:23-alpine AS builder
 
 ARG PUBLIC_BACKEND_URL
 ARG PUBLIC_WS_URL
@@ -16,11 +16,8 @@ RUN npm ci --omit=dev
 COPY . .
 
 RUN npm run build
-RUN npm ci --prod
 
-FROM node:20.12-alpine3.19
-
-USER node:node
+FROM node:23-alpine
 
 WORKDIR /app
 

@@ -1,4 +1,4 @@
-FROM rust:1-alpine3.19
+FROM rust:1-alpine3.21
 
 ENV RUSTFLAGS="-C target-feature=-crt-static"
 
@@ -10,7 +10,7 @@ COPY ./ /app
 RUN cargo build --release
 RUN strip target/release/backend
 
-FROM alpine:3.19
+FROM alpine:3.21
 
 RUN apk add --no-cache libgcc
 

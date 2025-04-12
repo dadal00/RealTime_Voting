@@ -1,6 +1,6 @@
 services:
   grafana:
-    image: grafana/grafana:10.4.1
+    image: grafana/grafana:11.3.5@sha256:6b7e05805ea8319e896df3ac5ad149350cfa860a463747472c9d0c5102256dc4
     networks:
       - net
     volumes:
@@ -16,7 +16,7 @@ services:
       replicas: 1
     
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.4.3@sha256:5fe9fa99e9a747297cdf0239a5b25d192d8f668bd6505b09beef4dffcab5aac2
     networks:
       - net
     ports:
@@ -27,7 +27,7 @@ services:
     command: -config.file=/etc/loki/loki_config.yml
   
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.2.1@sha256:6927e0919a144aa7616fd0137d4816816d42f6b816de3af269ab065250859a62
     networks:
       - net
     volumes:
