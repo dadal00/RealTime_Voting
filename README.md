@@ -9,10 +9,9 @@ Features
 Built with Rust, Svelte, Docker, and Figma
 
 InProgress:
-- Backend Saving State
-- Frontend DockerFile + Optimizations
-- Svelte Image Shrinking
+- Security
+- Frontend Mobile + Other resolutions
+- Maybe extra Devops
 
 ToDo:
-- Security
 - Deployment
