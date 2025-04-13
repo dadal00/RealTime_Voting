@@ -1,29 +1,31 @@
 use crate::{
     config::Config,
+    error::AppError,
     metrics::{metrics_handler, Metrics},
-    state::Counters,
+    save::{load, save},
+    signals::shutdown_signal,
+    state::{AppState, Counters},
     websocket::websocket_handler,
 };
 use axum::{
+    extract::State,
     http::{header::CONTENT_TYPE, HeaderName, Method},
     routing::get,
     Router,
 };
-use error::AppError;
-use signals::shutdown_signal;
-use state::AppState;
 use std::{
     sync::{atomic::AtomicUsize, Arc},
     time::Duration,
 };
-use tokio::{net::TcpListener, sync::broadcast};
+use tokio::{net::TcpListener, sync::broadcast, time::interval};
 use tower_http::cors::{AllowOrigin, CorsLayer};
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::{fmt, EnvFilter};
 
 mod config;
 mod error;
 mod metrics;
+mod save;
 mod signals;
 mod state;
 mod websocket;
@@ -40,9 +42,10 @@ async fn main() -> Result<(), AppError> {
 
     let config = Config::load()?;
 
-    info!(port = %config.rust_port, frontend = %config.svelte_url, "Server configuration");
-
-    let svelte_url = config.svelte_url.clone();
+    info!("Server configuration");
+    info!("state_path = {}", config.state_path);
+    info!("rust_port = {}", config.rust_port);
+    info!("svelte_url = {}", config.svelte_url);
 
     let (broadcast_tx, _) = broadcast::channel(100);
     let state = Arc::new(AppState {
@@ -53,33 +56,22 @@ async fn main() -> Result<(), AppError> {
         broadcast_tx,
     });
 
-    // let state_clone = state.clone();
-    // tokio::spawn(async move {
-    //     let mut interval = interval(Duration::from_millis(500));
-    //     loop {
-    //         interval.tick().await;
-    //         let count = state_clone.total_users.load(SeqCst);
-    //         let current_users = state_clone.concurrent_users.load(SeqCst);
-    //         let message = json!({
-    //             "type": "users",
-    //             "count": count,
-    //         });
-    //         match serde_json::to_string(&message) {
-    //             Ok(json) => {
-    //                 if current_users > 0 {
-    //                     if let Err(e) = state_clone.broadcast_tx.send(json) {
-    //                         warn!("Failed to broadcast total users: {}", e);
-    //                     }
-    //                 }
-    //             }
-    //             Err(e) => error!("Failed to serialize total users message: {}", e),
-    //         }
-    //     }
-    // });
+    load(&config.state_path, State(state.clone()));
+    let state_clone = state.clone();
+    let state_path = config.state_path.clone();
+    tokio::spawn(async move {
+        let mut interval = interval(Duration::from_secs(60 * 30));
+        loop {
+            interval.tick().await;
+            if let Err(e) = save(&state_path, State(state_clone.clone())).await {
+                error!("Failed to save state: {}", e);
+            }
+        }
+    });
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(move |origin, _req| {
-            origin.as_bytes() == svelte_url.as_bytes()
+            origin.as_bytes() == config.svelte_url.as_bytes()
         }))
         .allow_methods([Method::GET, Method::OPTIONS])
         .allow_headers([CONTENT_TYPE, HeaderName::from_static("traceparent")])
@@ -90,7 +82,7 @@ async fn main() -> Result<(), AppError> {
         .route("/api/ws", get(websocket_handler))
         .route("/metrics", get(metrics_handler))
         .layer(cors)
-        .with_state(state);
+        .with_state(state.clone());
 
     let addr = format!("0.0.0.0:{}", config.rust_port);
     info!("Binding to {}", addr);
@@ -102,6 +94,9 @@ async fn main() -> Result<(), AppError> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
+    if let Err(e) = save(&config.state_path, State(state.clone())).await {
+        error!("Failed to save state: {}", e);
+    }
     info!("Server shutdown complete");
     Ok(())
 }

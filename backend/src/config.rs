@@ -5,6 +5,7 @@ use tracing::{info, warn};
 pub struct Config {
     pub rust_port: u16,
     pub svelte_url: String,
+    pub state_path: String,
 }
 
 impl Config {
@@ -23,9 +24,16 @@ impl Config {
             })
             .unwrap_or_else(|_| "http://localhost:5173".into());
 
+        let state_path = var("RUST_STATE_PATH")
+            .inspect_err(|_| {
+                info!("RUST_STATE_PATH not set, using default");
+            })
+            .unwrap_or_else(|_| "/saved_state.json".into());
+
         Ok(Self {
             rust_port,
             svelte_url,
+            state_path,
         })
     }
 }

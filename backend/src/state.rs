@@ -1,5 +1,5 @@
 use crate::metrics::Metrics;
-use std::sync::atomic::{AtomicI64, AtomicUsize};
+use std::sync::atomic::AtomicUsize;
 use tokio::sync::broadcast;
 
 pub struct AppState {
@@ -11,21 +11,21 @@ pub struct AppState {
 }
 
 pub struct Counters {
-    pub red: AtomicI64,
-    pub green: AtomicI64,
-    pub blue: AtomicI64,
-    pub purple: AtomicI64,
-    pub total: AtomicI64,
+    pub red: AtomicUsize,
+    pub green: AtomicUsize,
+    pub blue: AtomicUsize,
+    pub purple: AtomicUsize,
+    pub total: AtomicUsize,
 }
 
 impl Default for Counters {
     fn default() -> Self {
         Self {
-            red: AtomicI64::new(0),
-            green: AtomicI64::new(0),
-            blue: AtomicI64::new(0),
-            purple: AtomicI64::new(0),
-            total: AtomicI64::new(0),
+            red: AtomicUsize::new(0),
+            green: AtomicUsize::new(0),
+            blue: AtomicUsize::new(0),
+            purple: AtomicUsize::new(0),
+            total: AtomicUsize::new(0),
         }
     }
 }

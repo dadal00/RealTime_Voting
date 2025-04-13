@@ -5,6 +5,7 @@ use axum::{
 use prometheus::Error as prometheusError;
 use serde_json::Error as jsonError;
 use std::{env::VarError, io::Error as IOError, string::FromUtf8Error};
+use tempfile::PersistError;
 use thiserror::Error;
 use tracing::{dispatcher::SetGlobalDefaultError, error};
 use tracing_subscriber::filter::ParseError;
@@ -14,8 +15,8 @@ pub enum AppError {
     #[error("Environment error: {0}")]
     Environment(#[from] VarError),
 
-    #[error("Network error: {0}")]
-    Network(#[from] IOError),
+    #[error("IO error: {0}")]
+    IO(#[from] IOError),
 
     #[error("Invalid header value: {0}")]
     HeaderValue(#[from] InvalidHeaderValue),
@@ -37,6 +38,9 @@ pub enum AppError {
 
     #[error("UTF-8 conversion error: {0}")]
     Utf8(#[from] FromUtf8Error),
+
+    #[error("Persist error: {0}")]
+    Persist(#[from] PersistError),
 }
 
 impl IntoResponse for AppError {

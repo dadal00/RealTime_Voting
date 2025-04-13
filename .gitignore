@@ -1,6 +1,7 @@
 backend/target
 monitor/loki_data
 monitor/prometheus_data
+deploy/saved_state.json
 
 .DS_Store
 

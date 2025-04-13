@@ -7,8 +7,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
-use std::sync::atomic::Ordering::SeqCst;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering::SeqCst, Arc};
 use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
 
@@ -101,31 +100,34 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
                                     .metrics
                                     .votes
                                     .with_label_values(&["red"])
-                                    .set(updated_color);
+                                    .set(updated_color.try_into().unwrap());
                             }
                             "green" => {
-                                updated_color = (state_clone.counters.green).fetch_add(1, SeqCst) + 1;
+                                updated_color =
+                                    (state_clone.counters.green).fetch_add(1, SeqCst) + 1;
                                 state_clone
                                     .metrics
                                     .votes
                                     .with_label_values(&["green"])
-                                    .set(updated_color);
+                                    .set(updated_color.try_into().unwrap());
                             }
                             "blue" => {
-                                updated_color = (state_clone.counters.blue).fetch_add(1, SeqCst) + 1;
+                                updated_color =
+                                    (state_clone.counters.blue).fetch_add(1, SeqCst) + 1;
                                 state_clone
                                     .metrics
                                     .votes
                                     .with_label_values(&["blue"])
-                                    .set(updated_color);
+                                    .set(updated_color.try_into().unwrap());
                             }
                             "purple" => {
-                                updated_color = (state_clone.counters.purple).fetch_add(1, SeqCst) + 1;
+                                updated_color =
+                                    (state_clone.counters.purple).fetch_add(1, SeqCst) + 1;
                                 state_clone
                                     .metrics
                                     .votes
                                     .with_label_values(&["purple"])
-                                    .set(updated_color);
+                                    .set(updated_color.try_into().unwrap());
                             }
                             _ => {
                                 warn!("Invalid color received: {}", message);
