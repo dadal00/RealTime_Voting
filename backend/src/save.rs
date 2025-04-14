@@ -22,7 +22,6 @@ struct SavedState {
 
 pub fn load(file_path: &str, State(state): State<Arc<AppState>>) {
     if Path::new(file_path).exists() {
-        info!("Reading from {}", file_path);
         match fs::read_to_string(file_path) {
             Ok(data) => match serde_json::from_str::<SavedState>(&data) {
                 Ok(data_read) => {
@@ -32,18 +31,18 @@ pub fn load(file_path: &str, State(state): State<Arc<AppState>>) {
                     state.counters.purple.store(data_read.purple, SeqCst);
                     state.counters.total.store(data_read.total, SeqCst);
                     state.total_users.store(data_read.total_users, SeqCst);
-                    info!("State loaded");
+                    info!("Loaded state");
                 }
                 Err(e) => {
-                    error!("Error parsing state file: {}", e);
+                    error!("Loading Error parsing file: {}", e);
                 }
             },
             Err(e) => {
-                warn!("Error reading state from file: {}", e);
+                warn!("Loading Error reading file: {}", e);
             }
         }
     } else {
-        warn!("State file not found");
+        warn!("Loading state file not found");
     }
 }
 
