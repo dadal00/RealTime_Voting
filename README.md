@@ -10,9 +10,7 @@ Built with Rust, Svelte, Docker, and Figma
 
 InProgress:
 - Security
-- Backend commands
-- Frontend Mobile + Other resolutions
-- Maybe extra Devops
+- Devops
 
 ToDo:
 - Deployment
