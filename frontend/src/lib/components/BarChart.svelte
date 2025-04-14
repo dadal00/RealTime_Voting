@@ -10,6 +10,12 @@
       .filter(([key]) => key !== 'total' && key != 'total_users')
       .map(([color, count]) => ({ color, count }))
   )
+  // const data = [
+  //   {color:"blue", count:999999999},
+  //   {color:"red", count:999999},
+  //   {color:"green", count:999999},
+  //   {color:"purple", count:999999},
+  // ]
 
   let width = 1000
   let height = 625
@@ -20,29 +26,54 @@
   let outer_padding = 0.01
   let minBarWidth = 200
   let visible = $state(true)
+  let mobile = $state(false)
+  let mobile_changed = $state(false)
 
   function calculateDimensions() {
     if (!container) return
-
     const containerRect = container.getBoundingClientRect()
 
-    let factor = containerRect.height < 300 ? 0.7 : 0.83
+    let factor = (() => {
+      switch(true) {
+        case containerRect.height < 245:
+          return 0.6
+        case containerRect.height < 300:
+          return 0.7
+        default:
+          return 0.83
+      }
+    })()
     outer_padding = containerRect.height < 430 ? 0.02 : 0.01
     minBarWidth = (() => {
       switch (true) {
+        case containerRect.width < 445:
+          mobile_changed = mobile ? false : true
+          mobile = true
+          if (containerRect.height < 620) {
+            return 125
+          }
+          return 150
         case containerRect.height < 450:
+          mobile_changed = mobile ? true : false
+          mobile = false
           switch (true) {
             case containerRect.width < 1200:
               return 205
             default:
               return 240
           }
-        case containerRect.height < 550:
-          return 240
-        case containerRect.height < 600:
-          return 260
         default:
-          return 300
+          if (containerRect.width < 1200) {
+            mobile_changed = mobile ? false : true
+            mobile = true
+            if (containerRect.height < 650) {
+              return 125
+            }
+            return 180
+          }
+          mobile_changed = mobile ? true : false
+          mobile = false
+          return 320
       }
     })()
     width = containerRect.width
@@ -121,15 +152,15 @@
     newBars
       .append('text')
       .attr('class', 'value-label')
-      .style('font-size', 'max(3.4vh, 1.4vw, 1rem)')
+      .style('font-size', mobile ? 'max(2.6vh, 0.7vw, 0.5rem)' : 'max(3.4vh, 1.4vw, 1rem)')
       .style('font-family', 'Verdana, Geneva, sans-serif')
       .style('fill', 'white')
-      .style('text-anchor', 'end')
+      .style('text-anchor', mobile ? 'beginning' : 'end')
 
     newBars
       .append('text')
       .attr('class', 'name-label')
-      .style('font-size', 'max(3.4vh, 1.4vw, 1rem)')
+      .style('font-size', mobile ? 'max(2.6vh, 0.7vw, 0.5rem)' : 'max(3.4vh, 1.4vw, 1rem)')
       .style('font-family', 'Verdana, Geneva, sans-serif')
       .style('fill', 'white')
       .style('text-anchor', 'beginning')
@@ -153,8 +184,8 @@
       .select('.value-label')
       .transition()
       .duration(delay)
-      .attr('x', (d) => Math.max(minBarWidth, xScale(d.count)) - 20)
-      .attr('y', yScale.bandwidth() / 2)
+      .attr('x', mobile ? 20 : (d) => Math.max(minBarWidth, xScale(d.count)) - 20)
+      .attr('y', mobile ? yScale.bandwidth() / 2 + 20 : yScale.bandwidth() / 2)
       .attr('dy', '0.35em')
       .text((d) => format_number(d.count))
 
@@ -163,7 +194,7 @@
       .transition()
       .duration(delay)
       .attr('x', 20)
-      .attr('y', yScale.bandwidth() / 2)
+      .attr('y', mobile ? yScale.bandwidth() / 2 - 20 : yScale.bandwidth() / 2)
       .attr('dy', '0.35em')
       .text((d) => labels[d.color])
   }
@@ -188,7 +219,11 @@
   })
 
   $effect(() => {
-    if (visible && svg && data) {
+    if (visible && mobile_changed) {
+      svg?.remove()
+      chart_init()
+      update_chart()
+    } else if (visible && svg && data) {
       update_chart()
     }
   })

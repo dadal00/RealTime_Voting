@@ -24,6 +24,7 @@
 <style>
   :global(body, html) {
     margin: 0;
+    touch-action: manipulation;
   }
 
   .page-container {

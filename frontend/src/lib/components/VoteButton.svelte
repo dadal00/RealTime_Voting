@@ -131,13 +131,35 @@
 
   @media screen and (max-width: 600px) {
     button {
-      font-size: 0.8rem;
+      font-size: 0.6rem;
     }
   }
 
   @media screen and (max-height: 530px) {
     button {
       font-size: 0.9rem;
+    }
+  }
+
+  @media screen and (max-aspect-ratio: 0.57) and (max-width: 450px) {
+    .button-container {
+      aspect-ratio: 0.8;
+    }
+
+    button {
+      font-size: 0.7rem;
+    }
+    .button-container:hover button {
+      transform: none;
+    }
+
+    .button-container:active .button-background {
+      top: 2px;
+      height: calc(100% - 2px);
+    }
+
+    .button-container:active button {
+      transform: translateY(2px);
     }
   }
 </style>
