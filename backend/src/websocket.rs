@@ -7,7 +7,10 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
-use std::sync::{atomic::Ordering::SeqCst, Arc};
+use std::sync::{
+    atomic::Ordering::{Acquire, Relaxed},
+    Arc,
+};
 use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
 
@@ -21,21 +24,19 @@ pub async fn websocket_handler(
 }
 
 async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
-    let user_count = state.concurrent_users.fetch_add(1, SeqCst) + 1;
-    state
-        .metrics
-        .concurrent_users
-        .set(user_count.try_into().unwrap());
-    state.total_users.fetch_add(1, SeqCst);
+    state.metrics.concurrent_users.inc();
+    let count = state.total_users.fetch_add(1, Relaxed);
     state.metrics.total_users.inc();
-    debug!("New WebSocket connection. User count: {}", user_count);
+    debug!(
+        "New WebSocket connection. User count: {}",
+        state.concurrent_users.fetch_add(1, Relaxed) + 1
+    );
 
     let mut rx = state.broadcast_tx.subscribe();
     let (ws_sender, mut ws_receiver) = socket.split();
 
     let ws_sender = Arc::new(Mutex::new(ws_sender));
 
-    let count = state.total_users.load(SeqCst);
     let message = json!({
         "type": "users",
         "count": count,
@@ -52,32 +53,26 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
     let initial = json!({
         "type": "initial",
         "count": count,
-        "red": state.counters.red.load(SeqCst),
-        "green": state.counters.green.load(SeqCst),
-        "blue": state.counters.blue.load(SeqCst),
-        "purple": state.counters.purple.load(SeqCst),
-        "total": state.counters.total.load(SeqCst),
+        "red": state.counters.red.load(Acquire),
+        "green": state.counters.green.load(Acquire),
+        "blue": state.counters.blue.load(Acquire),
+        "purple": state.counters.purple.load(Acquire),
+        "total": state.counters.total.load(Acquire),
     });
     match serde_json::to_string(&initial) {
         Ok(json) => {
             let mut sender = ws_sender.lock().await;
             if let Err(e) = sender.send(Message::Text(json)).await {
                 error!("Failed to send initial state: {}", e);
-                state.metrics.concurrent_users.set(
-                    (state.concurrent_users.fetch_sub(1, SeqCst) - 1)
-                        .try_into()
-                        .unwrap(),
-                );
+                state.concurrent_users.fetch_sub(1, Relaxed);
+                state.metrics.concurrent_users.dec();
                 return;
             }
         }
         Err(e) => {
             error!("Failed to serialize initial state: {}", e);
-            state.metrics.concurrent_users.set(
-                (state.concurrent_users.fetch_sub(1, SeqCst) - 1)
-                    .try_into()
-                    .unwrap(),
-            );
+            state.concurrent_users.fetch_sub(1, Relaxed);
+            state.metrics.concurrent_users.dec();
             return;
         }
     }
@@ -95,39 +90,30 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
                         let updated_color;
                         match message.as_str() {
                             "red" => {
-                                updated_color = (state_clone.counters.red).fetch_add(1, SeqCst) + 1;
-                                state_clone
-                                    .metrics
-                                    .votes
-                                    .with_label_values(&["red"])
-                                    .set(updated_color.try_into().unwrap());
+                                updated_color = state_clone.counters.red.fetch_add(1, Relaxed) + 1;
+                                state_clone.metrics.votes.with_label_values(&["red"]).inc();
                             }
                             "green" => {
                                 updated_color =
-                                    (state_clone.counters.green).fetch_add(1, SeqCst) + 1;
+                                    state_clone.counters.green.fetch_add(1, Relaxed) + 1;
                                 state_clone
                                     .metrics
                                     .votes
                                     .with_label_values(&["green"])
-                                    .set(updated_color.try_into().unwrap());
+                                    .inc();
                             }
                             "blue" => {
-                                updated_color =
-                                    (state_clone.counters.blue).fetch_add(1, SeqCst) + 1;
-                                state_clone
-                                    .metrics
-                                    .votes
-                                    .with_label_values(&["blue"])
-                                    .set(updated_color.try_into().unwrap());
+                                updated_color = state_clone.counters.blue.fetch_add(1, Relaxed) + 1;
+                                state_clone.metrics.votes.with_label_values(&["blue"]).inc();
                             }
                             "purple" => {
                                 updated_color =
-                                    (state_clone.counters.purple).fetch_add(1, SeqCst) + 1;
+                                    state_clone.counters.purple.fetch_add(1, Relaxed) + 1;
                                 state_clone
                                     .metrics
                                     .votes
                                     .with_label_values(&["purple"])
-                                    .set(updated_color.try_into().unwrap());
+                                    .inc();
                             }
                             _ => {
                                 warn!("Invalid color received: {}", message);
@@ -142,11 +128,9 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
                             }
                         };
 
-                        let total = state_clone.counters.total.fetch_add(1, SeqCst) + 1;
-
                         let message = json!({
                             message.as_str(): updated_color,
-                            "total": total,
+                            "total": state_clone.counters.total.fetch_add(1, Relaxed) + 1,
                         });
 
                         match serde_json::to_string(&message) {
@@ -186,10 +170,9 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
         _ = handle_broadcasts => {},
     }
 
-    let new_count = state.concurrent_users.fetch_sub(1, SeqCst) - 1;
-    state
-        .metrics
-        .concurrent_users
-        .set(new_count.try_into().unwrap());
-    debug!("WebSocket connection closed. User count: {}", new_count);
+    state.metrics.concurrent_users.dec();
+    debug!(
+        "WebSocket connection closed. User count: {}",
+        state.concurrent_users.fetch_sub(1, Relaxed) - 1
+    );
 }

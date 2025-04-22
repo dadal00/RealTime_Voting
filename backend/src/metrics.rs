@@ -1,17 +1,18 @@
 use crate::{error::AppError, AppState};
 use axum::extract::State;
 use prometheus::{
-    register_int_counter, register_int_gauge, register_int_gauge_vec, Encoder, TextEncoder,
+    register_int_counter, register_int_counter_vec, register_int_gauge, Encoder, IntCounter,
+    IntCounterVec, IntGauge, Registry, TextEncoder,
 };
 use std::sync::Arc;
 use tracing::debug;
 
 #[derive(Debug)]
 pub struct Metrics {
-    pub concurrent_users: prometheus::IntGauge,
-    pub total_users: prometheus::IntCounter,
-    pub votes: prometheus::IntGaugeVec,
-    registry: prometheus::Registry,
+    pub concurrent_users: IntGauge,
+    pub total_users: IntCounter,
+    pub votes: IntCounterVec,
+    registry: Registry,
 }
 
 impl Default for Metrics {
@@ -26,7 +27,7 @@ impl Default for Metrics {
             register_int_counter!("total_users", "Total number of users since startup")
                 .expect("Can't create total_users metric");
 
-        let votes = register_int_gauge_vec!("votes", "Current vote counts", &["color"])
+        let votes = register_int_counter_vec!("votes", "Current vote counts", &["color"])
             .expect("Can't create votes metric");
 
         registry
@@ -34,13 +35,6 @@ impl Default for Metrics {
             .unwrap();
         registry.register(Box::new(total_users.clone())).unwrap();
         registry.register(Box::new(votes.clone())).unwrap();
-
-        votes.with_label_values(&["green"]).set(0);
-        votes.with_label_values(&["blue"]).set(0);
-        votes.with_label_values(&["red"]).set(0);
-        votes.with_label_values(&["purple"]).set(0);
-        concurrent_users.set(0);
-        total_users.inc();
 
         Metrics {
             concurrent_users,
