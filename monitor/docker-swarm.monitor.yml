@@ -46,8 +46,6 @@ services:
   
   goaccess:
     image: allinurl/goaccess:1.9.4@sha256:9f8273d6b46fcbb7cb9334a7e8d20a6167ec570080f62731e7b2cb45803b8a2f
-    networks:
-      - net
     volumes:
       - ../deploy/caddy_logs:/var/log/caddy
       - ./goaccess/www/report.html:/www/report.html
