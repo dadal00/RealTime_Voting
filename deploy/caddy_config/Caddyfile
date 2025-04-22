@@ -1,3 +1,8 @@
+{
+	log stdout {
+		output stdout
+	}
+}
 {$CADDY_DOMAIN} {
 	handle /api/ws {
 		reverse_proxy {$RUST_NAME}:{$RUST_PORT} {
@@ -16,7 +21,7 @@
 	tls internal
 
 	log {
-		output stdout
+		output file /var/log/caddy/access.log
 		level DEBUG
 	}
 }

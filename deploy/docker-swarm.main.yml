@@ -60,17 +60,18 @@ services:
         loki-timeout: "10s"
         loki-retries: "3"
     environment:
+      - CADDY_LOG_ROTATE_DAYS=356
+      - CADDY_LOG_ROTATE_SIZE=10000
       - CADDY_DOMAIN=${CADDY_DOMAIN}
       - RUST_NAME=${RUST_NAME}
       - RUST_PORT=${RUST_PORT}
       - SVELTE_NAME=${SVELTE_NAME}
       - SVELTE_PORT=${SVELTE_PORT}
     volumes:
-      - caddy_data:/data
-      - caddy_config:/config
-      - type: bind
-        source: Caddyfile
-        target: /etc/caddy/Caddyfile
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+      - ./caddy_logs:/var/log/caddy
+      - ./caddy_config/Caddyfile:/etc/caddy/Caddyfile
 
 networks:
   main_net:
@@ -78,11 +79,3 @@ networks:
   monitor_net:
     external: true
     name: monitor_net
-
-volumes:
-  caddy_data:
-  caddy_config:
-
-configs:
-  caddy_config:
-    file: Caddyfile

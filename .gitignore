@@ -1,7 +1,14 @@
 backend/target
+
 monitor/loki_data
 monitor/prometheus_data
+monitor/goaccess
+
 deploy/saved_state.json
+deploy/caddy_logs/access.log
+deploy/caddy_data
+deploy/caddy_config/caddy
+
 
 .DS_Store
 

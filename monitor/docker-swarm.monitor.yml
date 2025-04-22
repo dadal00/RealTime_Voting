@@ -44,6 +44,29 @@ services:
       placement:
         constraints: [node.role == manager]
   
+  goaccess:
+    image: allinurl/goaccess:1.9.4@sha256:9f8273d6b46fcbb7cb9334a7e8d20a6167ec570080f62731e7b2cb45803b8a2f
+    networks:
+      - net
+    volumes:
+      - ../deploy/caddy_logs:/var/log/caddy
+      - ./goaccess/www/report.html:/www/report.html
+      - ./goaccess/mmdb:/mmdb
+    ports:
+      - "7890:7890"
+    command: [
+      "--log-file=/var/log/caddy/access.log",
+      "-o",
+      "/www/report.html",
+      "--real-time-html",
+      "--port=7890",
+      "--geoip-database=/mmdb/GeoLite2-City.mmdb",
+      "--geoip-database=/mmdb/GeoLite2-Country.mmdb",
+      "--keep-last=356",
+      "--no-global-config",
+      "--log-format=CADDY"
+    ]
+
 networks:
   net:
     driver: overlay
