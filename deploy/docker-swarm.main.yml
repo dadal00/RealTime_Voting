@@ -10,7 +10,7 @@ services:
         condition: on-failure
         delay: 5s
     volumes:
-      - ./saved_state.json:${STATE_PATH}
+      - ./saved_state.json:${RUST_STATE_PATH}
     logging:
       driver: loki
       options:
