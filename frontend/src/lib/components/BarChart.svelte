@@ -1,8 +1,9 @@
 <script>
   import * as d3 from 'd3'
   import { onMount, onDestroy } from 'svelte'
-  import { websocket } from '$lib/stores/websocket'
+  import { websocket, connected } from '$lib/stores/websocket'
   import VisibilityChange from 'svelte-visibility-change'
+  import { visibility } from '$lib/stores/visibility'
 
   const { labels } = $props()
   const data = $derived(
@@ -25,7 +26,7 @@
   let resizeObserver
   let outer_padding = 0.01
   let minBarWidth = 200
-  let visible = $state(true)
+  // let visible = $state(true)
   let mobile = $state(false)
   let mobile_changed = $state(false)
 
@@ -113,7 +114,7 @@
   }
 
   function update_chart() {
-    if (!svg || !visible) return
+    if (!svg || !$visibility) return
 
     data.sort((a, b) => b.count - a.count)
 
@@ -219,11 +220,15 @@
   })
 
   $effect(() => {
-    if (visible && mobile_changed) {
+    // console.log($connected)
+    if ($visibility && !$connected) {
+      websocket.attemptReconnect()
+    }
+    if ($visibility && mobile_changed) {
       svg?.remove()
       chart_init()
       update_chart()
-    } else if (visible && svg && data) {
+    } else if ($visibility && svg && data) {
       update_chart()
     }
   })
@@ -247,7 +252,7 @@
   }
 </style>
 
-<VisibilityChange on:visible={() => (visible = true)} on:hidden={() => (visible = false)} />
+<VisibilityChange on:visible={() => visibility.set(true)} on:hidden={() => visibility.set(false)} />
 <div class="chart-container" bind:this={container}>
   <div id="chart"></div>
 </div>

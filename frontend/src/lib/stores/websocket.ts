@@ -1,7 +1,10 @@
 import { get, writable } from 'svelte/store'
 import { PUBLIC_WS_URL } from '$env/static/public'
+import { visibility } from './visibility'
 
 const MSG_KEYS = new Set(['red', 'green', 'blue', 'purple', 'total'])
+
+export const connected = writable<boolean>(false)
 
 export const websocket = (() => {
   const { subscribe, set, update } = writable({
@@ -60,6 +63,7 @@ export const websocket = (() => {
 
     socket.onopen = () => {
       console.log('connected')
+      connected.set(true)
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
@@ -68,12 +72,12 @@ export const websocket = (() => {
 
     socket.onclose = () => {
       console.log('disconnected')
-      attemptReconnect()
+      connected.set(false)
     }
 
     socket.onerror = (e) => {
       console.error('connection error:', e)
-      attemptReconnect()
+      connected.set(false)
     }
 
     return socket
@@ -86,6 +90,9 @@ export const websocket = (() => {
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
       connect()
+      if (!get(connected) && get(visibility)) {
+        attemptReconnect()
+      }
     }, delay)
   }
 
@@ -94,7 +101,7 @@ export const websocket = (() => {
       socket.send('' + payload)
     } else {
       console.error('Cannot send vote: not connected')
-      attemptReconnect()
+      connected.set(false)
     }
   }
 
@@ -110,5 +117,6 @@ export const websocket = (() => {
     connect,
     sendPayload,
     disconnect,
+    attemptReconnect,
   }
 })()
