@@ -1,6 +1,8 @@
 use crate::error::AppError;
 use tracing::{info, warn};
 
+pub const MAX_BYTES: u8 = 10;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub rust_port: u16,

@@ -14,6 +14,7 @@ use std::sync::{
 use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
 
+use crate::config::MAX_BYTES;
 use crate::state::AppState;
 
 pub async fn websocket_handler(
@@ -85,6 +86,11 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
             while let Some(result) = ws_receiver.next().await {
                 match result {
                     Ok(Message::Text(message)) => {
+                        if message.len() > MAX_BYTES.into() {
+                            warn!("Payload abnormal: larger than max bytes");
+                            break;
+                        }
+
                         debug!("Received payload for: {}", message);
 
                         let updated_color;
