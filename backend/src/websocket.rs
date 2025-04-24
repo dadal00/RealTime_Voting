@@ -1,6 +1,6 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
+        ws::{close_code, CloseFrame, Message, WebSocket, WebSocketUpgrade},
         State,
     },
     response::IntoResponse,
@@ -80,15 +80,22 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
 
     let handle_messages = {
         let ws_sender = Arc::clone(&ws_sender);
-        let state_clone = state.clone();
+        let state_clone = Arc::clone(&state);
 
         async move {
             while let Some(result) = ws_receiver.next().await {
                 match result {
                     Ok(Message::Text(message)) => {
                         if message.len() > MAX_BYTES.into() {
-                            warn!("Payload abnormal: larger than max bytes");
-                            break;
+                            error!("Payload abnormal: larger than max bytes");
+                            let mut sender = ws_sender.lock().await;
+                            let _ = sender
+                                .send(Message::Close(Some(CloseFrame {
+                                    code: close_code::INVALID,
+                                    reason: "Payload too large".into(),
+                                })))
+                                .await;
+                            return;
                         }
 
                         debug!("Received payload for: {}", message);
@@ -122,15 +129,15 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
                                     .inc();
                             }
                             _ => {
-                                warn!("Invalid color received: {}", message);
+                                error!("Invalid color received: {}", message);
                                 let mut sender = ws_sender.lock().await;
-                                if let Err(e) = sender
-                                    .send(Message::Text(format!("Invalid color: {}", message)))
-                                    .await
-                                {
-                                    error!("Error sending validation message: {}", e);
-                                }
-                                continue;
+                                let _ = sender
+                                    .send(Message::Close(Some(CloseFrame {
+                                        code: close_code::INVALID,
+                                        reason: "Payload too large".into(),
+                                    })))
+                                    .await;
+                                return;
                             }
                         };
 
@@ -152,21 +159,35 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        debug!("WebSocket receive error: {}", e);
-                        break;
+                        error!("Websocket error: {}", e);
+                        let mut sender = ws_sender.lock().await;
+                        let _ = sender
+                            .send(Message::Close(Some(CloseFrame {
+                                code: close_code::INVALID,
+                                reason: "Payload too large".into(),
+                            })))
+                            .await;
+                        return;
                     }
                 }
             }
         }
     };
-
+    let state_clone = Arc::clone(&state);
     let handle_broadcasts = async move {
         let ws_sender = Arc::clone(&ws_sender);
+
         while let Ok(msg) = rx.recv().await {
             let mut sender = ws_sender.lock().await;
             if let Err(e) = sender.send(Message::Text(msg)).await {
-                warn!("WebSocket send error: {}", e);
-                break;
+                error!("WebSocket send error: {}", e);
+                let _ = sender
+                    .send(Message::Close(Some(CloseFrame {
+                        code: close_code::INVALID,
+                        reason: "Payload too large".into(),
+                    })))
+                    .await;
+                return;
             }
         }
     };
@@ -176,9 +197,9 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
         _ = handle_broadcasts => {},
     }
 
-    state.metrics.concurrent_users.dec();
+    state_clone.metrics.concurrent_users.dec();
     debug!(
         "WebSocket connection closed. User count: {}",
-        state.concurrent_users.fetch_sub(1, Relaxed) - 1
+        state_clone.concurrent_users.fetch_sub(1, Relaxed) - 1
     );
 }
