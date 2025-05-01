@@ -5,13 +5,16 @@ use axum::{
     },
     response::IntoResponse,
 };
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use serde_json::json;
 use std::sync::{
     atomic::Ordering::{Acquire, Relaxed},
     Arc,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast::Receiver, Mutex};
 use tracing::{debug, error, warn};
 
 use crate::config::MAX_BYTES;
@@ -75,15 +78,8 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
 }
 
 async fn handle_messages(
-    mut ws_receiver: futures_util::stream::SplitStream<axum::extract::ws::WebSocket>,
-    ws_sender: Arc<
-        tokio::sync::Mutex<
-            futures_util::stream::SplitSink<
-                axum::extract::ws::WebSocket,
-                axum::extract::ws::Message,
-            >,
-        >,
-    >,
+    mut ws_receiver: SplitStream<WebSocket>,
+    ws_sender: Arc<Mutex<SplitSink<WebSocket, Message>>>,
     state: Arc<AppState>,
 ) {
     while let Some(result) = ws_receiver.next().await {
@@ -113,15 +109,8 @@ async fn handle_messages(
 }
 
 async fn handle_broadcasts(
-    mut rx: tokio::sync::broadcast::Receiver<String>,
-    ws_sender: Arc<
-        tokio::sync::Mutex<
-            futures_util::stream::SplitSink<
-                axum::extract::ws::WebSocket,
-                axum::extract::ws::Message,
-            >,
-        >,
-    >,
+    mut rx: Receiver<String>,
+    ws_sender: Arc<Mutex<SplitSink<WebSocket, Message>>>,
 ) {
     while let Ok(msg) = rx.recv().await {
         let mut sender = ws_sender.lock().await;
@@ -140,14 +129,7 @@ async fn handle_broadcasts(
 async fn process_message(
     message: &str,
     state: &Arc<AppState>,
-    ws_sender: &Arc<
-        tokio::sync::Mutex<
-            futures_util::stream::SplitSink<
-                axum::extract::ws::WebSocket,
-                axum::extract::ws::Message,
-            >,
-        >,
-    >,
+    ws_sender: &Arc<Mutex<SplitSink<WebSocket, Message>>>,
 ) {
     let state_clone = Arc::clone(state);
 
@@ -205,14 +187,7 @@ async fn broadcast_update(message: &str, updated_color: usize, state: Arc<AppSta
 
 async fn close_connection(
     signal: ClosingSignal,
-    ws_sender: &Arc<
-        tokio::sync::Mutex<
-            futures_util::stream::SplitSink<
-                axum::extract::ws::WebSocket,
-                axum::extract::ws::Message,
-            >,
-        >,
-    >,
+    ws_sender: &Arc<Mutex<SplitSink<WebSocket, Message>>>,
     error_info: Option<&str>,
 ) {
     let message = match signal {
@@ -254,14 +229,7 @@ async fn close_connection(
 async fn send_initial(
     count: &usize,
     state: &Arc<AppState>,
-    ws_sender: &Arc<
-        tokio::sync::Mutex<
-            futures_util::stream::SplitSink<
-                axum::extract::ws::WebSocket,
-                axum::extract::ws::Message,
-            >,
-        >,
-    >,
+    ws_sender: &Arc<Mutex<SplitSink<WebSocket, Message>>>,
 ) -> Result<(), AppError> {
     let message = json!({
         "type": "users",

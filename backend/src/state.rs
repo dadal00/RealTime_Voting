@@ -1,12 +1,12 @@
 use crate::metrics::Metrics;
 use std::sync::atomic::AtomicUsize;
-use tokio::sync::broadcast;
+use tokio::sync::broadcast::Sender;
 
 pub struct AppState {
     pub counters: Counters,
     pub concurrent_users: AtomicUsize,
     pub total_users: AtomicUsize,
-    pub broadcast_tx: broadcast::Sender<String>,
+    pub broadcast_tx: Sender<String>,
     pub metrics: Metrics,
 }
 

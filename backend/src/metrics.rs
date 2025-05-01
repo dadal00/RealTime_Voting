@@ -17,7 +17,7 @@ pub struct Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
-        let registry = prometheus::Registry::new();
+        let registry = Registry::new();
 
         let concurrent_users =
             register_int_gauge!("concurrent_users", "Number of currently connected users")
