@@ -15,7 +15,15 @@ use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
 
 use crate::config::MAX_BYTES;
+use crate::error::AppError;
 use crate::state::AppState;
+
+enum ClosingSignal {
+    WebSocketErr,
+    PayloadTooLarge,
+    InvalidColor,
+    WebSocketSendErr,
+}
 
 pub async fn websocket_handler(
     websocket: WebSocketUpgrade,
@@ -33,23 +41,234 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
         state.concurrent_users.fetch_add(1, Relaxed) + 1
     );
 
-    let mut rx = state.broadcast_tx.subscribe();
-    let (ws_sender, mut ws_receiver) = socket.split();
+    let rx = state.broadcast_tx.subscribe();
 
-    let ws_sender = Arc::new(Mutex::new(ws_sender));
+    let (ws_sender, ws_receiver) = socket.split();
+    let ws_sender_arc = Arc::new(Mutex::new(ws_sender));
 
+    let handle_messages_sender = Arc::clone(&ws_sender_arc);
+    let handle_messages_state = Arc::clone(&state);
+
+    let handle_broadcasts_sender = Arc::clone(&ws_sender_arc);
+    let metrics_state = Arc::clone(&state);
+
+    match send_initial(&count, &state, &ws_sender_arc).await {
+        Ok(()) => {}
+        Err(e) => {
+            error!("Sending initial state failed: {}", e);
+            state.concurrent_users.fetch_sub(1, Relaxed);
+            state.metrics.concurrent_users.dec();
+            return;
+        }
+    }
+
+    tokio::select! {
+        _ = handle_messages(ws_receiver, handle_messages_sender, handle_messages_state) => {},
+        _ = handle_broadcasts(rx, handle_broadcasts_sender) => {},
+    }
+
+    metrics_state.metrics.concurrent_users.dec();
+    debug!(
+        "WebSocket connection closed. User count: {}",
+        metrics_state.concurrent_users.fetch_sub(1, Relaxed) - 1
+    );
+}
+
+async fn handle_messages(
+    mut ws_receiver: futures_util::stream::SplitStream<axum::extract::ws::WebSocket>,
+    ws_sender: Arc<
+        tokio::sync::Mutex<
+            futures_util::stream::SplitSink<
+                axum::extract::ws::WebSocket,
+                axum::extract::ws::Message,
+            >,
+        >,
+    >,
+    state: Arc<AppState>,
+) {
+    while let Some(result) = ws_receiver.next().await {
+        match result {
+            Ok(Message::Text(message)) => {
+                if message.len() > MAX_BYTES.into() {
+                    close_connection(ClosingSignal::PayloadTooLarge, &ws_sender, None).await;
+                    return;
+                }
+
+                debug!("Received payload for: {}", message);
+
+                process_message(&message, &state, &ws_sender).await;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                close_connection(
+                    ClosingSignal::WebSocketErr,
+                    &ws_sender,
+                    Some(&e.to_string()),
+                )
+                .await;
+                return;
+            }
+        }
+    }
+}
+
+async fn handle_broadcasts(
+    mut rx: tokio::sync::broadcast::Receiver<String>,
+    ws_sender: Arc<
+        tokio::sync::Mutex<
+            futures_util::stream::SplitSink<
+                axum::extract::ws::WebSocket,
+                axum::extract::ws::Message,
+            >,
+        >,
+    >,
+) {
+    while let Ok(msg) = rx.recv().await {
+        let mut sender = ws_sender.lock().await;
+        if let Err(e) = sender.send(Message::Text(msg)).await {
+            close_connection(
+                ClosingSignal::WebSocketSendErr,
+                &ws_sender,
+                Some(&e.to_string()),
+            )
+            .await;
+            return;
+        }
+    }
+}
+
+async fn process_message(
+    message: &str,
+    state: &Arc<AppState>,
+    ws_sender: &Arc<
+        tokio::sync::Mutex<
+            futures_util::stream::SplitSink<
+                axum::extract::ws::WebSocket,
+                axum::extract::ws::Message,
+            >,
+        >,
+    >,
+) {
+    let state_clone = Arc::clone(state);
+
+    let updated_color = match message {
+        "red" => {
+            state_clone.metrics.votes.with_label_values(&["red"]).inc();
+            state_clone.counters.red.fetch_add(1, Relaxed) + 1
+        }
+        "green" => {
+            state_clone
+                .metrics
+                .votes
+                .with_label_values(&["green"])
+                .inc();
+            state_clone.counters.green.fetch_add(1, Relaxed) + 1
+        }
+        "blue" => {
+            state_clone.metrics.votes.with_label_values(&["blue"]).inc();
+            state_clone.counters.blue.fetch_add(1, Relaxed) + 1
+        }
+        "purple" => {
+            state_clone
+                .metrics
+                .votes
+                .with_label_values(&["purple"])
+                .inc();
+            state_clone.counters.purple.fetch_add(1, Relaxed) + 1
+        }
+        _ => {
+            close_connection(ClosingSignal::InvalidColor, ws_sender, Some(message)).await;
+            return;
+        }
+    };
+
+    broadcast_update(message, updated_color, state_clone).await;
+}
+
+async fn broadcast_update(message: &str, updated_color: usize, state: Arc<AppState>) {
+    let update = json!({
+        message: updated_color,
+        "total": state.counters.total.fetch_add(1, Relaxed) + 1,
+    });
+
+    match serde_json::to_string(&update) {
+        Ok(json) => {
+            if let Err(e) = state.broadcast_tx.send(json) {
+                warn!("Failed to broadcast update: {}", e);
+            }
+        }
+        Err(e) => {
+            error!("Failed to serialize update: {}", e);
+        }
+    }
+}
+
+async fn close_connection(
+    signal: ClosingSignal,
+    ws_sender: &Arc<
+        tokio::sync::Mutex<
+            futures_util::stream::SplitSink<
+                axum::extract::ws::WebSocket,
+                axum::extract::ws::Message,
+            >,
+        >,
+    >,
+    error_info: Option<&str>,
+) {
+    let message = match signal {
+        ClosingSignal::WebSocketErr => {
+            error!(
+                "Websocket error: {}",
+                error_info.unwrap_or("unknown websocket error")
+            );
+            "Websocket Error"
+        }
+        ClosingSignal::PayloadTooLarge => {
+            error!("Payload abnormal: larger than max bytes");
+            "Abnormal Payload"
+        }
+        ClosingSignal::InvalidColor => {
+            error!(
+                "Invalid color received: {}",
+                error_info.unwrap_or("unknown color")
+            );
+            "Invalid Color"
+        }
+        ClosingSignal::WebSocketSendErr => {
+            error!(
+                "Websocket sending error: {}",
+                error_info.unwrap_or("unknown color")
+            );
+            "Websocket Sending Error"
+        }
+    };
+    let mut sender = ws_sender.lock().await;
+    let _ = sender
+        .send(Message::Close(Some(CloseFrame {
+            code: close_code::INVALID,
+            reason: message.into(),
+        })))
+        .await;
+}
+
+async fn send_initial(
+    count: &usize,
+    state: &Arc<AppState>,
+    ws_sender: &Arc<
+        tokio::sync::Mutex<
+            futures_util::stream::SplitSink<
+                axum::extract::ws::WebSocket,
+                axum::extract::ws::Message,
+            >,
+        >,
+    >,
+) -> Result<(), AppError> {
     let message = json!({
         "type": "users",
         "count": count,
     });
-    match serde_json::to_string(&message) {
-        Ok(json) => {
-            if let Err(e) = state.broadcast_tx.send(json) {
-                warn!("Failed to broadcast total users: {}", e);
-            }
-        }
-        Err(e) => error!("Failed to serialize total users message: {}", e),
-    }
+    let json = serde_json::to_string(&message)?;
+    state.broadcast_tx.send(json)?;
 
     let initial = json!({
         "type": "initial",
@@ -60,146 +279,9 @@ async fn handle_websocket(socket: WebSocket, state: Arc<AppState>) {
         "purple": state.counters.purple.load(Acquire),
         "total": state.counters.total.load(Acquire),
     });
-    match serde_json::to_string(&initial) {
-        Ok(json) => {
-            let mut sender = ws_sender.lock().await;
-            if let Err(e) = sender.send(Message::Text(json)).await {
-                error!("Failed to send initial state: {}", e);
-                state.concurrent_users.fetch_sub(1, Relaxed);
-                state.metrics.concurrent_users.dec();
-                return;
-            }
-        }
-        Err(e) => {
-            error!("Failed to serialize initial state: {}", e);
-            state.concurrent_users.fetch_sub(1, Relaxed);
-            state.metrics.concurrent_users.dec();
-            return;
-        }
-    }
+    let json = serde_json::to_string(&initial)?;
 
-    let handle_messages = {
-        let ws_sender = Arc::clone(&ws_sender);
-        let state_clone = Arc::clone(&state);
-
-        async move {
-            while let Some(result) = ws_receiver.next().await {
-                match result {
-                    Ok(Message::Text(message)) => {
-                        if message.len() > MAX_BYTES.into() {
-                            error!("Payload abnormal: larger than max bytes");
-                            let mut sender = ws_sender.lock().await;
-                            let _ = sender
-                                .send(Message::Close(Some(CloseFrame {
-                                    code: close_code::INVALID,
-                                    reason: "Payload too large".into(),
-                                })))
-                                .await;
-                            return;
-                        }
-
-                        debug!("Received payload for: {}", message);
-
-                        let updated_color;
-                        match message.as_str() {
-                            "red" => {
-                                updated_color = state_clone.counters.red.fetch_add(1, Relaxed) + 1;
-                                state_clone.metrics.votes.with_label_values(&["red"]).inc();
-                            }
-                            "green" => {
-                                updated_color =
-                                    state_clone.counters.green.fetch_add(1, Relaxed) + 1;
-                                state_clone
-                                    .metrics
-                                    .votes
-                                    .with_label_values(&["green"])
-                                    .inc();
-                            }
-                            "blue" => {
-                                updated_color = state_clone.counters.blue.fetch_add(1, Relaxed) + 1;
-                                state_clone.metrics.votes.with_label_values(&["blue"]).inc();
-                            }
-                            "purple" => {
-                                updated_color =
-                                    state_clone.counters.purple.fetch_add(1, Relaxed) + 1;
-                                state_clone
-                                    .metrics
-                                    .votes
-                                    .with_label_values(&["purple"])
-                                    .inc();
-                            }
-                            _ => {
-                                error!("Invalid color received: {}", message);
-                                let mut sender = ws_sender.lock().await;
-                                let _ = sender
-                                    .send(Message::Close(Some(CloseFrame {
-                                        code: close_code::INVALID,
-                                        reason: "Payload too large".into(),
-                                    })))
-                                    .await;
-                                return;
-                            }
-                        };
-
-                        let message = json!({
-                            message.as_str(): updated_color,
-                            "total": state_clone.counters.total.fetch_add(1, Relaxed) + 1,
-                        });
-
-                        match serde_json::to_string(&message) {
-                            Ok(json) => {
-                                if let Err(e) = state_clone.broadcast_tx.send(json) {
-                                    warn!("Failed to broadcast update: {}", e);
-                                }
-                            }
-                            Err(e) => {
-                                error!("Failed to serialize update: {}", e);
-                            }
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Websocket error: {}", e);
-                        let mut sender = ws_sender.lock().await;
-                        let _ = sender
-                            .send(Message::Close(Some(CloseFrame {
-                                code: close_code::INVALID,
-                                reason: "Payload too large".into(),
-                            })))
-                            .await;
-                        return;
-                    }
-                }
-            }
-        }
-    };
-    let state_clone = Arc::clone(&state);
-    let handle_broadcasts = async move {
-        let ws_sender = Arc::clone(&ws_sender);
-
-        while let Ok(msg) = rx.recv().await {
-            let mut sender = ws_sender.lock().await;
-            if let Err(e) = sender.send(Message::Text(msg)).await {
-                error!("WebSocket send error: {}", e);
-                let _ = sender
-                    .send(Message::Close(Some(CloseFrame {
-                        code: close_code::INVALID,
-                        reason: "Payload too large".into(),
-                    })))
-                    .await;
-                return;
-            }
-        }
-    };
-
-    tokio::select! {
-        _ = handle_messages => {},
-        _ = handle_broadcasts => {},
-    }
-
-    state_clone.metrics.concurrent_users.dec();
-    debug!(
-        "WebSocket connection closed. User count: {}",
-        state_clone.concurrent_users.fetch_sub(1, Relaxed) - 1
-    );
+    let mut sender = ws_sender.lock().await;
+    sender.send(Message::Text(json)).await?;
+    Ok(())
 }

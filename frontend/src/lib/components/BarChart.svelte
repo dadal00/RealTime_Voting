@@ -11,12 +11,6 @@
       .filter(([key]) => key !== 'total' && key != 'total_users')
       .map(([color, count]) => ({ color, count }))
   )
-  // const data = [
-  //   {color:"blue", count:999999999},
-  //   {color:"red", count:999999},
-  //   {color:"green", count:999999},
-  //   {color:"purple", count:999999},
-  // ]
 
   let width = 1000
   let height = 625
@@ -26,7 +20,6 @@
   let resizeObserver
   let outer_padding = 0.01
   let minBarWidth = 200
-  // let visible = $state(true)
   let mobile = $state(false)
   let mobile_changed = $state(false)
 
@@ -35,7 +28,7 @@
     const containerRect = container.getBoundingClientRect()
 
     let factor = (() => {
-      switch(true) {
+      switch (true) {
         case containerRect.height < 245:
           return 0.6
         case containerRect.height < 300:

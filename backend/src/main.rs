@@ -57,6 +57,7 @@ async fn main() -> Result<(), AppError> {
     });
 
     load(&config.state_path, State(state.clone()));
+
     let state_clone = state.clone();
     let state_path = config.state_path.clone();
     tokio::spawn(async move {

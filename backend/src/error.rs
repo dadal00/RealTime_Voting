@@ -1,12 +1,14 @@
 use axum::{
     http::{header::InvalidHeaderValue, StatusCode},
     response::{IntoResponse, Response},
+    Error as AxumError,
 };
 use prometheus::Error as prometheusError;
 use serde_json::Error as jsonError;
 use std::{env::VarError, io::Error as IOError, string::FromUtf8Error};
 use tempfile::PersistError;
 use thiserror::Error;
+use tokio::sync::broadcast::error::SendError;
 use tracing::{dispatcher::SetGlobalDefaultError, error};
 use tracing_subscriber::filter::ParseError;
 
@@ -41,6 +43,12 @@ pub enum AppError {
 
     #[error("Persist error: {0}")]
     Persist(#[from] PersistError),
+
+    #[error("Broadcast error: {0}")]
+    Broadcast(#[from] SendError<String>),
+
+    #[error("Websocket send error: {0}")]
+    WebSocketSend(#[from] AxumError),
 }
 
 impl IntoResponse for AppError {
